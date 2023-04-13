@@ -1,0 +1,41 @@
+{
+  "name": "terse-mock",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/terse-mock.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ayartsev7/terse-mock"
+  },
+  "bugs": {
+    "url": "https://github.com/ayartsev7/terse-mock/issues"
+  },
+  "scripts": {
+    "test": "jest --coverage",
+    "build": "tsc"
+  },
+  "author": {
+    "name": "Anton Yartsev",
+    "email": "anton.yartsev@gmail.com",
+    "url": "https://github.com/ayartsev7"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^27.0.2",
+    "coveralls": "^3.1.1",
+    "jest": "^27.3.1",
+    "ts-jest": "^27.0.7",
+    "typescript": "^4.4.3"
+  },
+  "type": "module",
+  "jest": {
+    "testEnvironment": "jsdom",
+    "collectCoverage": true,
+    "testPathIgnorePatterns": [
+      "<rootDir>/node_modules/"
+    ],
+    "transform": {
+      "\\.(ts|tsx)$": "ts-jest"
+    }
+  }
+}
