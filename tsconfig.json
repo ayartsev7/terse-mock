@@ -1,4 +1,6 @@
 {
+  "include": ["src"],
+  "exclude": ["node_modules", "tests"],
   "compilerOptions": {
     /* Basic Options */                       
     "target": "ES2017",                       /* Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', or 'ESNEXT'. */
@@ -10,7 +12,7 @@
     "declaration": true,                      /* Generates corresponding '.d.ts' file. */
     "sourceMap": true,                        /* Generates corresponding '.map' file. */
     // "outFile": "./",                       /* Concatenate and emit output to single file. */
-    "outDir": "./build/",                     /* Redirect output structure to the directory. */
+    "outDir": "./build",                      /* Redirect output structure to the directory. */
     // "rootDir": "./front",                  /* Specify the root directory of input files. Use to control the output directory structure with --outDir. */
     // "removeComments": true,                /* Do not emit comments to output. */
     // "noEmit": true,                        /* Do not emit outputs. */
@@ -52,6 +54,5 @@
     /* Experimental Options */                
     // "experimentalDecorators": true,        /* Enables experimental support for ES7 decorators. */
     // "emitDecoratorMetadata": true,         /* Enables experimental support for emitting type metadata for decorators. */
-  },
-  "exclude": ["node_modules", "tests"]
+  }
 }
