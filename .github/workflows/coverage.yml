@@ -10,7 +10,7 @@ jobs:
           node-version: '14'
       - run: npm install
       - run: npm test -- --coverage
-      - name: generate jest coverage badge
       - uses: jpb06/jest-badges-action@latest
         with:
           branches: master
+        name: generate jest coverage badge
