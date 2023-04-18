@@ -1,8 +1,21 @@
 {
   "name": "terse-mock",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "",
-  "main": "src/terse-mock.ts",
+  "main": "build/terse-mock.js",
+  "files": [
+    "build",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "typescript",
+    "test",
+    "testing",
+    "mocking",
+    "stub",
+    "unittesting"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/ayartsev7/terse-mock"
