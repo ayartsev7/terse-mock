@@ -66,7 +66,7 @@ Unmocking is required to turn result into plain js type before checking expectat
 
 - [Deep automocking](#deep-automocking)
 
-- [Easy setting of mock values](#easy-setting-of-mock-values)
+- [Easy setting mock values](#easy-setting-mock-values)
 
 - [Creating functions that return different values per set of arguments](#creating-functions-that-return-different-values-per-set-of-arguments)
 
@@ -124,7 +124,7 @@ test('some test', () => {
 ```
 Test Suites: 1 passed, 1 total
 ```
-## Easy setting of mock values
+## Easy setting mock values
 Now let's make mock return specific values and write another tests for SUT from [Automocking](#automocking) section:
 ```javascript
 test.each([
@@ -186,8 +186,8 @@ test('stubs', () => {
 ```
 ## Mock interfaces
 Generic form of tmock/tstub is available if one need to use benefits like static type checking and code completion   
-![Static type checking and code completion](../media/static-type-check.jpg?raw=true)
-
+![Static type checking and code completion](../media/static-type-check.jpg?raw=true)  
+  
 ## Call history
 Let's write test that checks call order and arguments of mocked functions for SUT from [Automocking](#automocking) section:
 ```javascript
