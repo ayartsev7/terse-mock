@@ -68,9 +68,9 @@ describe('-------------------- tglobalopt ----------------------', () => {
 
     // ASSERT
     expect(globalOptions).toEqual({
-      automock: true,
-      simplifiedOutput: true,
-      name: 'mock',
+      defaultMockName: 'mock',
+      simplifiedOutputEnabled: true,
+      automockEnabled: true,
     });
   });
 
@@ -78,15 +78,15 @@ describe('-------------------- tglobalopt ----------------------', () => {
     // ACT
     const globalOptionsBackup = tglobalopt();
     const globalOptions = tglobalopt({
-      name: 'mock name',
-      simplifiedOutput: false,
+      defaultMockName: 'mock name',
+      simplifiedOutputEnabled: false,
     });
 
     // ASSERT
     expect(globalOptions).toEqual({
-      name: 'mock name',
-      simplifiedOutput: false,
-      automock: true,
+      defaultMockName: 'mock name',
+      simplifiedOutputEnabled: false,
+      automockEnabled: true,
     });
 
     tglobalopt(globalOptionsBackup); // restore global options
@@ -141,7 +141,7 @@ describe('----------------------- tmock arguments ------------------------', () 
 
   test('should accept options as first or second or third argument', () => {
     // ARRANGE
-    const options = { name: 'mockName' };
+    const options = { defaultMockName: 'mockName' };
 
     // ACT
     const mock1 = tmock(options);
@@ -197,7 +197,7 @@ describe('----------------------- tmock options ------------------------', () =>
 
     test('should use name if name is provided', () => {
       // ARRANGE
-      const mock = tmock({ name: 'name' });
+      const mock = tmock({ defaultMockName: 'name' });
 
       // ASSERT
       expect(tunmock(mock.a)).toBe('name.a');
@@ -205,7 +205,7 @@ describe('----------------------- tmock options ------------------------', () =>
 
     test('should remove leading comma if name is an empty string', () => {
       // ARRANGE
-      const mock = tmock({ name: '' });
+      const mock = tmock({ defaultMockName: '' });
 
       // ASSERT
       expect(tunmock(mock.a)).toBe('a');
@@ -281,8 +281,8 @@ describe('----------------------- tmock options ------------------------', () =>
       [function f() { return null; }, 'mock(function f)', 'mock(function f)'],
     ])('should simplify output %#', (arg, expectedResult, expectedResultSimplified) => {
       // ARRANGE
-      const mock = tm.mock({ simplifiedOutput: false });
-      const mockSimplifiedOutput = tm.mock({ simplifiedOutput: true });
+      const mock = tm.mock({ simplifiedOutputEnabled: false });
+      const mockSimplifiedOutput = tm.mock({ simplifiedOutputEnabled: true });
 
       // ACT
       const res = mock(arg);
@@ -296,8 +296,8 @@ describe('----------------------- tmock options ------------------------', () =>
     test('should simplify nested mocks', () => {
       // ARRANGE
       const innerMock = tm.mock('innerMock', [{ a: 7 }]);
-      const mock = tm.mock({ simplifiedOutput: false });
-      const mockSimplifiedOutput = tm.mock({ simplifiedOutput: true });
+      const mock = tm.mock({ simplifiedOutputEnabled: false });
+      const mockSimplifiedOutput = tm.mock({ simplifiedOutputEnabled: true });
 
       // ACT
       const res = mock(innerMock);
@@ -312,7 +312,7 @@ describe('----------------------- tmock options ------------------------', () =>
   describe('automock', () => {
     test('should return proxy when automock enabled for not explicitly mocked', () => {
       // ACT
-      const mock = tmock({ automock: true });
+      const mock = tmock({ automockEnabled: true });
 
       // ASSERT
       expect(typeof mock.a).toBe('function');
@@ -320,7 +320,7 @@ describe('----------------------- tmock options ------------------------', () =>
 
     test('should return undefined when automock disabled for not explicitly mocked', () => {
       // ACT
-      const mock = tmock({ automock: false });
+      const mock = tmock({ automockEnabled: false });
 
       // ASSERT
       expect(mock.a).toBeUndefined();
@@ -1117,14 +1117,14 @@ describe('------------------- treset --------------------', () => {
 
     tm.reset(mock);
     res = tm.unmock(mock);
-    expect(res).toBe('value from mock');
+    expect(res).toBe('value from mock'); // TODO: shouldn't it be { aaa: 7 } ?
   });
 
   test('should erase mock calls', () => {
     // ARRANGE
     treset();
-    const mock1 = tmock([{ f: function fff() {} }], { name: 'mock1', simplifiedOutput: false });
-    const mock2 = tmock({ name: 'mock2', simplifiedOutput: false });
+    const mock1 = tmock([{ f: function fff() {} }], { defaultMockName: 'mock1', simplifiedOutputEnabled: false });
+    const mock2 = tmock({ defaultMockName: 'mock2', simplifiedOutputEnabled: false });
 
     // ACT
     const mock3 = mock1.prop.f(Infinity);
@@ -1246,8 +1246,8 @@ describe('-------------------- tcalls -------------------', () => {
     function f(arg1, arg2) {
       arg1(arg2.prop.p);
     }
-    const mock1 = tmock('mock1', { simplifiedOutput: false });
-    const mock2 = tmock('mock2', { simplifiedOutput: false });
+    const mock1 = tmock('mock1', { simplifiedOutputEnabled: false });
+    const mock2 = tmock('mock2', { simplifiedOutputEnabled: false });
     f(mock1, mock2);
 
     // ACT

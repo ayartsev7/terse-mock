@@ -228,10 +228,10 @@ interface IMockFunctionContext {
   argsToReturnValues: { [key: string]: any };
 }
 
-export interface IOptions {
-  automock: boolean;
-  simplifiedOutput: boolean;
-  name: string;
+export interface ITmockOptions {
+  automockEnabled: boolean;
+  simplifiedOutputEnabled: boolean;
+  defaultMockName: string;
   externalMock?: IExternalMock;
 }
 
@@ -305,10 +305,10 @@ class PathBuilder {
   private path_: string  = '';
   private latestPathChunk_: ObjectPropertyType  = '';
   private pathToBeShown_ = '';
-  private options_: IOptions;
+  private options_: ITmockOptions;
 
   // TODO: options -> simplified output
-  constructor(path: string, pathToBeShown: string, options: IOptions) {
+  constructor(path: string, pathToBeShown: string, options: ITmockOptions) {
     this.path_ = path;
     this.pathToBeShown_ = pathToBeShown;
     this.options_ = options;
@@ -316,7 +316,7 @@ class PathBuilder {
 
   public addCall(args: any[]): PathBuilder {
     const latestPathChunk = argsToString(args);
-    const pathToBeShownChunk = !this.options_.simplifiedOutput ? latestPathChunk : argsToString(args, true);
+    const pathToBeShownChunk = !this.options_.simplifiedOutputEnabled ? latestPathChunk : argsToString(args, true);
     const pathBuilderClone = new PathBuilder(
       this.path_ + latestPathChunk,
       this.pathToBeShown_ + pathToBeShownChunk,
@@ -564,13 +564,13 @@ export function tset<T = any>(stubOrMock, initCoupleOrCouples: [(mockProxy: T) =
   }
 }
 
-let globalOptions: IOptions = {
-  automock: true,
-  simplifiedOutput: true,
-  name: 'mock',
+let globalOptions: ITmockOptions = {
+  automockEnabled: true,
+  simplifiedOutputEnabled: true,
+  defaultMockName: 'mock',
 };
 
-export function tglobalopt(options?: Partial<IOptions>): IOptions {
+export function tglobalopt(options?: Partial<ITmockOptions>): ITmockOptions {
   if (!options) {
     return globalOptions;
   }
@@ -583,7 +583,7 @@ export type InitCouple<T = any> = [(mockProxy: T) => any, any];
 export type InitObject = {[index: string]: unknown};
 type InitObjectOrInitCouple<T> = (T extends {} ? Partial<T> : InitCouple<T>) | InitCouple<T>;
 export type AnyInitializer = InitObject | InitCouple;
-type PartialOptions = Partial<IOptions>;
+type PartialOptions = Partial<ITmockOptions>;
 
 function getStubInitializationProxy(proxyContext: IStubInitializationProxyContext) {
   const initializationProxy = new Proxy(defaultProxyTarget, {
@@ -682,7 +682,7 @@ function getMockInitializationProxy(proxyContext: IMockInitializationProxyContex
   }
 }
 
-function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder, options: IOptions) {
+function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder, options: ITmockOptions) {
   initCouples.forEach(initCouple => {
     const proxyContext: IMockInitializationProxyContext = {
       tree: sutMockTree,
@@ -716,7 +716,7 @@ function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder,
   });
 }
 
-function traversePropOrCall(pathBuilder: PathBuilder, options: IOptions, prop?: ObjectPropertyType, callInfo?: CallInfo) {
+function traversePropOrCall(pathBuilder: PathBuilder, options: ITmockOptions, prop?: ObjectPropertyType, callInfo?: CallInfo) {
   const newPathBuilder = callInfo ? pathBuilder.addCall(callInfo.args) : pathBuilder.addProp(prop!);
 
   const nodeFromSutMockTree = sutMockTree.get(newPathBuilder.path);
@@ -731,7 +731,7 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: IOptions, prop?: 
     }  
   }
 
-  if (!options.automock) {
+  if (!options.automockEnabled) {
     // Stop proxing if automock is false and propertry has not been explicitly mocked.
     return undefined;
   }
@@ -748,7 +748,7 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: IOptions, prop?: 
   return getSutProxy(newPathBuilder, options); // TODO: is it possible to return proxy, not getSutProxy? (no, because)
 }
 
-function getSutProxy(pathBuilder: PathBuilder, options: IOptions) {
+function getSutProxy(pathBuilder: PathBuilder, options: ITmockOptions) {
   const path = pathBuilder.path;
   const sutProxy = new Proxy(defaultProxyTarget, {
     get(target, prop) {
@@ -756,10 +756,10 @@ function getSutProxy(pathBuilder: PathBuilder, options: IOptions) {
       switch (prop) {
         case IS_A_MOCK_PROXY: return true;
         case MOCK_PROXY_TRAVERSED_PATH: return path;
-        case MOCK_PROXY_NAME: return options.name;
+        case MOCK_PROXY_NAME: return options.defaultMockName;
         case MOCK_PROXY_TO_OBJECT:
           const treeAsObject = sutMockTree.toObject(pathBuilder.path, options.externalMock);
-          return treeAsObject.hasValue() ? treeAsObject.getValue() : options.name;      
+          return treeAsObject.hasValue() ? treeAsObject.getValue() : options.defaultMockName;      
         case 'hasOwnProperty': return () => true;
         case Symbol.toPrimitive: return target as any; // Prevent from 'TypeError: Cannot convert object to primitive value'.
       }
@@ -856,16 +856,16 @@ export function tmock<T = any>(
 {
   const parsedArgs = parseTmockArgs(nameOrSetupOrOptionsArg, setupOrOptionsArg, optionsArg);
 
-  const options: IOptions = {
+  const options: ITmockOptions = {
     ...globalOptions,
     ...parsedArgs.options,
   };
   if (parsedArgs.name) {
-    options.name = parsedArgs.name;
+    options.defaultMockName = parsedArgs.name;
   }
 
   const path = `__ROOT${totalMocksCounter++}__`;
-  const pathBuilder = new PathBuilder(path, options.name, options);
+  const pathBuilder = new PathBuilder(path, options.defaultMockName, options);
 
   const initCouples: InitCouple[] =
     parsedArgs.initializers?.filter(initializer => isArray(initializer) && initializer.length === 2) as InitCouple[] || [];

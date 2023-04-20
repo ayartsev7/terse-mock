@@ -65,29 +65,22 @@ Unmocking is required to turn result into plain js type before checking expectat
 ## Features
 
 - [Deep automocking](#deep-automocking)
-
 - [Easy setting mock values](#easy-setting-mock-values)
-
 - [Creating functions that return different values per set of arguments](#creating-functions-that-return-different-values-per-set-of-arguments)
-
 - [Stubs](#stubs)
-
-- [Mock interfaces](#mock-interfaces)
-
+- [Interface mocks](#interface-mocks)
 - [Call history](#call-history)
-
 - [Automatic spies](#automatic-spies)
-
 - [Using external mocks](#using-external-mocks)
-
-- [Mocking modules](#mocking-modules)
-
+- [Module mocks](#module-mocks)
 - [And more](#and-more)
+  - [Alternative way of setting mock values](#alternative-way-of-setting-mock-values)
+  - [Global module options](#global-module-options)
 
 ## Deep automocking
-By default mocks allow to access properties and call functions at any nesting level without first initializing the return values.
+By default mocks allows to access properties and call functions at any nesting level without first initializing the return values.
 
-Suppose we have [SUT]('https://en.wikipedia.org/wiki/System_under_test'):
+Suppose we have [SUT](https://en.wikipedia.org/wiki/System_under_test):
 ```javascript
 function sut(data) {
   const r1 = data.getSomething(true).doSomething();
@@ -104,7 +97,7 @@ function sut(data) {
 ```
 The shortest test could look like this:
 ```javascript
-test('some test', () => {
+test('shortest test demo', () => {
   // ARRANGE
   const mock = tmock('data');
 
@@ -125,7 +118,7 @@ test('some test', () => {
 Test Suites: 1 passed, 1 total
 ```
 ## Easy setting mock values
-Now let's make mock return specific values and write another tests for SUT from [Automocking](#automocking) section:
+For the SUT defined [above](#deep-automocking) make mock return different values for property so we could test all code paths:
 ```javascript
 test.each([
   [1, 'something else'],
@@ -134,7 +127,7 @@ test.each([
   // ARRANGE
   const mock = tmock([
     [m => m.getSomething(true).doSomething().property, property],
-    [m => m.getSomethingElse('a'), expectedResult],
+    [m => m.getSomethingElse('a'), 'something else'],
   ]);
 
   // ACT
@@ -146,7 +139,7 @@ test.each([
 ```
 ## Creating functions that return different values per set of arguments
 ```javascript
-test('different return values per set of arguments', () => {
+test('function that return different values per set of arguments demo', () => {
   // ARRANGE
   const f = tmock([
     [m => m(tm.ANY), 0],
@@ -167,7 +160,7 @@ test('different return values per set of arguments', () => {
 ## Stubs
 If one need neither automocking nor checking function calls then it worth using stubs rather then mocks. terse-mock stubs are plain js objects, fast and straightford.
 ```javascript
-test('stubs', () => {
+test('stub demo', () => {
   // ARRANGE
   const stub = tstub([
     [s => s.a.aa, 0],
@@ -184,12 +177,12 @@ test('stubs', () => {
   expect(stub.f()).toEqual('result');
 });
 ```
-## Mock interfaces
-Generic form of tmock/tstub is available if one need to use benefits like static type checking and code completion   
-![Static type checking and code completion](../media/static-type-check.jpg?raw=true)  
-  
+## Interface mocks
+Generic form of `tmock`/`tstub` is available if one wants to use benefits like static type checking and code completion  
+
+![Static type checking and code completion](../media/static-type-check.jpg?raw=true)
 ## Call history
-Let's write test that checks call order and arguments of mocked functions for SUT from [Automocking](#automocking) section:
+The module keeps mocked functions call history. The test below demonstrates how one could check call order and arguments passed to mocked functions for SUT from [above](#deep-automocking):
 ```javascript
 test('check calls demo', () => {
   // ARRANGE
@@ -214,9 +207,66 @@ test('check calls demo', () => {
 });
 ```
 ## Automatic spies
+The module automatically creates spies for functions from mock return values added by `tmock` and `tset` (except functions from return values of other functions). Calls to spied functions get to result of `tcalls` and can be analyzed with `tinfo`.
+```javascript
+test('automatic spies demo', () => {
+  // ARRANGE
+  const obj = {
+    nestedObj: {
+      f: function (n) { return n > 7 },
+    },
+  };
+  const mock = tmock([
+    [m => m.obj, obj],
+  ]);
+
+  // ASSERT
+  expect(mock.obj.nestedObj.f(7)).toBe(false);
+  expect(mock.obj.nestedObj.f(8)).toBe(true);
+  expect(tcalls(mock)).toEqual([
+    'mock.obj.nestedObj.f(7)',
+    'mock.obj.nestedObj.f(8)'
+  ])
+});
+```
 ## Using external mocks
-## Mocking modules
-terse-mock mocks can be used as mocks returned from [Jest module factory for jest.mock()](https://jestjs.io/docs/es6-class-mocks#calling-jestmock-with-the-module-factory-parameter)
+terse-mock can use external mocks to analyze calls to mocked functions. To do so one need to create adapter for external mock by implementing `IExternalMock` interface provided by the module and pass the adapter to `tmock`. The test demonstrates how to use Jest mocks for call analyzing:
+```javascript
+const jestMock: IExternalMock = {
+  create: () => jest.fn(),
+};
+
+test('can use external mocks to analyze calls to mocked functions', () => {
+  // ARRANGE
+  const mock = tmock({ externalMock: jestMock });
+
+  // ACT
+  mock.f(7);
+
+  // ASSERT
+  const unmockedMock = tunmock(mock);
+  const externalMockForF = tinfo(unmockedMock.f).externalMock;
+  expect(externalMockForF).toBeCalledTimes(1);
+  expect(externalMockForF).toBeCalledWith(7);
+});
+```
+Also external mocks can be used as return values for terse-mock mocks:
+```javascript
+test('can use external mock as return value', () => {
+  // ARRANGE
+  const jestFn = jest.fn();
+  const mock = tmock([{ f: jestFn }]);
+
+  // ACT
+  mock.f();
+
+  // ASSERT
+  expect(mock.f).toBeCalledTimes(1);
+});
+```
+## Module mocks
+terse-mock mocks can be used as return values from [Jest module factory for jest.mock()](https://jestjs.io/docs/es6-class-mocks#calling-jestmock-with-the-module-factory-parameter)  
+Please note that the example below uses an [alternative form]() of setting mock values, as it is well suited for such cases.
 ```javascript
 import { tmock } from '../src/terse-mock';
 jest.mock('some-module', () => tmock('some-module');
@@ -225,3 +275,42 @@ jest.mock('some-other-module', () => tmock('some-other-module', [{
 }]));
 ```
 ## And more
+Minor features.
+### Alternative way of setting mock values
+Besides setup tuples there is another way of passing mock return values: initialization object. This option is well suited for [module mocks](#module-mocks)
+```javascript
+test('two ways of setting mock values', () => {
+  // ARRANGE
+  const stub = tstub([
+    { // with object
+      a: 'value for a', // equivalent to tuple [s => s.a, 'value for a']
+    },
+    [s => s.b, 'value for b'], // with tuple
+    [s => s.c, 'value for c'], // with tuple
+  ]);
+
+  // ASSERT
+  expect(stub).toEqual({
+    a: 'value for a',
+    b: 'value for b',
+    c: 'value for c',
+  });
+});
+```
+### Global module options
+`tglobalopt` allows to customise global module settings like set default name for mocks or turn simplified output on/of
+```javascript
+test('global module options', () => {
+  // ARRANGE
+  tglobalopt({
+    defaultMockName: 'newName',
+  })
+  const mock = tmock();
+
+  // ACT
+  const res = tunmock(mock.a);
+
+  // ASSERT
+  expect(res).toBe('newName.a');
+});
+```
