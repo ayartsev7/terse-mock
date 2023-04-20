@@ -266,7 +266,7 @@ test('can use external mock as return value', () => {
 ```
 ## Module mocks
 terse-mock mocks can be used as return values from [Jest module factory for jest.mock()](https://jestjs.io/docs/es6-class-mocks#calling-jestmock-with-the-module-factory-parameter)  
-Please note that the example below uses an [alternative form]() of setting mock values, as it is well suited for such cases.
+Please note that the example below uses an [alternative way](#alternative-way-of-setting-mock-values) of setting mock values, as it is well suited for such cases.
 ```javascript
 import { tmock } from '../src/terse-mock';
 jest.mock('some-module', () => tmock('some-module');
