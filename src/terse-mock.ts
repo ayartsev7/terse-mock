@@ -1,5 +1,5 @@
-const ANY = Symbol('__ANY__');
-const ANY_ARGS = argsToString([ANY]);
+export const TM_ANY = Symbol('__TM_ANY__');
+const ANY_ARGS = argsToString([TM_ANY]);
 const MOCK_PROXY_TRAVERSED_PATH = '__MOCK_PROXY_TRAVERSED_PATH__';
 const MOCK_PROXY_NAME = '__MOCK_PROXY_NAME__';
 const MOCK_PROXY_TO_OBJECT = '__MOCK_PROXY_TO_OBJECT__';
@@ -724,7 +724,7 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: ITmockOptions, pr
     return nodeFromSutMockTree.getValue();
   }
   if (callInfo) {
-    const pathBuilderAny = pathBuilder.addCall([ANY]); // TODO: use static function of PathBuilder
+    const pathBuilderAny = pathBuilder.addCall([TM_ANY]); // TODO: use static function of PathBuilder
     const nodeFromSutMockTree = sutMockTree.get(pathBuilderAny.path); // TODO: reuse code
     if (nodeFromSutMockTree?.isFinal()) {
       return nodeFromSutMockTree.getValue();
@@ -905,8 +905,8 @@ export function tstub<T = any>(initializer: InitObjectOrInitCouple<T> | InitObje
   return stubCopy;
 }
 
-export const tm = {
-  ANY: ANY,
+export default {
+  ANY: TM_ANY,
   mock: tmock,
   stub: tstub,
   set: tset,
@@ -915,5 +915,4 @@ export const tm = {
   info: tinfo,
   calls: tcalls, // make proxy specially handled functions like proxy.tcalls ?
   globalopt: tglobalopt,
-  // targ = { topt: ..., tmap: ..., tstub: ...}
 };

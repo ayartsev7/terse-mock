@@ -1,4 +1,4 @@
-﻿import { tm, tset, treset, tmock, tunmock, tinfo, tcalls, tglobalopt, IExternalMock, InitCouple, AnyInitializer } from '../src/terse-mock';
+﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tcalls, tglobalopt, IExternalMock, InitCouple, AnyInitializer } from '../src/terse-mock';
 
 const jestMock: IExternalMock = {
   create: () => jest.fn(),
@@ -52,6 +52,7 @@ const OBJECTS_AND_ARRAYS = [
 
 test('all exported functions should have analogues in tm', () => {
   // ASSERT
+  expect(tm.ANY).toBe(TM_ANY);
   expect(tm.set).toBe(tset);
   expect(tm.reset).toBe(treset);
   expect(tm.mock).toBe(tmock);
@@ -608,7 +609,7 @@ describe('-------------------- tstub ----------------------', () => {
       [(s) => s.f(1), 5],
       [(s) => s.f(3), 7],
       [(s) => s.g(1, 3), 'bbb'],
-      [(s) => s.g(tm.ANY), 'aaa'],
+      [(s) => s.g(TM_ANY), 'aaa'],
     ]);
 
     // ASSERT

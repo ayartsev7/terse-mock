@@ -75,6 +75,7 @@ Unmocking is required to turn result into plain js type before checking expectat
 - [Module mocks](#module-mocks)
 - [And more](#and-more)
   - [Alternative way of setting mock values](#alternative-way-of-setting-mock-values)
+  - [Import all at once](#import-all-at-once)
   - [Global module options](#global-module-options)
 
 ## Deep automocking
@@ -142,7 +143,7 @@ test.each([
 test('function that return different values per set of arguments demo', () => {
   // ARRANGE
   const f = tmock([
-    [m => m(tm.ANY), 0],
+    [m => m(ANY), 0],
     [m => m(), 1],
     [m => m('a'), 2],
     [m => m('b'), 3],
@@ -275,7 +276,7 @@ jest.mock('some-other-module', () => tmock('some-other-module', [{
 }]));
 ```
 ## And more
-Minor features.
+Some of minor features are listed below. See project [tests](https://github.com/ayartsev7/terse-mock/tree/main/tests) for the rest of features and examples.
 ### Alternative way of setting mock values
 Besides setup tuples there is another way of passing mock return values: initialization object. This option is well suited for [module mocks](#module-mocks)
 ```javascript
@@ -297,8 +298,22 @@ test('two ways of setting mock values', () => {
   });
 });
 ```
+### Import all at once
+Module has default export with all module functions and constants.  
+Instead of
+```javascript
+import { tmock, TM_ANY } from 'terse-mock';
+
+const mock = tmock([[m => m.f(TM_ANY), 1]]);
+```
+one can write
+```javascript
+import tm from 'terse-mock';
+
+const mock = tm.mock([[m => m.f(tm.ANY), 1]]);
+```
 ### Global module options
-`tglobalopt` allows to customise global module settings like set default name for mocks or turn simplified output on/of
+`tglobalopt` allows to customise global module settings e.g. set default name for mocks or turn simplified output on/of
 ```javascript
 test('global module options', () => {
   // ARRANGE
