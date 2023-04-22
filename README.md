@@ -76,6 +76,7 @@ Unmocking is required to turn result into plain js type before checking expectat
 - [And more](#and-more)
   - [Alternative way of setting mock values](#alternative-way-of-setting-mock-values)
   - [Import all at once](#import-all-at-once)
+  - [Сall history display options](#call-history-display-options)
   - [Global module options](#global-module-options)
 
 ## Deep automocking
@@ -311,6 +312,31 @@ one can write
 import tm from 'terse-mock';
 
 const mock = tm.mock([[m => m.f(tm.ANY), 1]]);
+```
+### Call history display options
+By default `tcalls` uses simplified output - it does not expose the contents of objects and arrays in called functions arguments. If you need to see the contents of objects and arrays, you can use the `simplifiedOutputEnabled` option, which can be set both globally and for a specific mock.
+```javascript
+test('simplified output enabled/disabled demo', () => {
+  // ARRANGE
+  const mock = tmock();
+  const mockSimplifiedOutput = tmock({ simplifiedOutputEnabled: false });
+
+  // ACT
+  mock.f(
+    1,
+    { a: 1, b: 2, c: 3 },
+    [1, 2, 3]
+  );
+  mockSimplifiedOutput.f(
+    1,
+    { a: 1, b: 2, c: 3 },
+    [1, 2, 3],
+  );
+
+  // ASSERT
+  expect(tcalls(mock)[0]).toBe('mock.f(1, {...}, [...])');
+  expect(tcalls(mockSimplifiedOutput)[0]).toBe('mock.f(1, {a: 1, b: 2, c: 3}, [1, 2, 3])');
+});
 ```
 ### Global module options
 `tglobalopt` allows to customise global module settings e.g. set default name for mocks or turn simplified output on/of
