@@ -246,6 +246,10 @@ interface IStubInitializationProxyContext {
   pathBuilder: PathBuilder;
 };
 
+interface IStubWrapper {
+  stub: any;
+}
+
 type StringDictionary = { [key: string]: string };
 
 class Undefinable {
@@ -518,11 +522,11 @@ export function tcalls(mock?: any): string[] {
   return totalCallLog.filter((call) => call.path.startsWith(path)).map((call) => call.pathToBeShown);
 }
 
-function applyCouplesToStub(stub: object, initCouples: InitCouple[]) {
+function applyCouplesToStub(stubWrapper: IStubWrapper, initCouples: InitCouple[]) {
   initCouples.forEach(initCouple => {
     const proxyContext: IStubInitializationProxyContext = {
-      stubRef: stub,
-      prevStubRef: stub,
+      stubRef: stubWrapper.stub,
+      prevStubRef: stubWrapper.stub,
       prevProp: '',
       stubReplacement: undefined,
       pathBuilder: new PathBuilder('', '', {} as any),
@@ -536,17 +540,20 @@ function applyCouplesToStub(stub: object, initCouples: InitCouple[]) {
     if (proxyContext.prevProp) {
       proxyContext.prevStubRef[proxyContext.prevProp] = initCouple[1];
     } else {
-      throw new Error('Cannot replace stab root');
+      throw new Error('Cannot replace stab root'); // TODO: why not? allow this?
+    }
+    if (proxyContext.stubReplacement) {
+      stubWrapper.stub = proxyContext.stubReplacement;
     }
   });
 }
 
-export function tset<T = any>(stubOrMock, initCoupleOrCouples: [(mockProxy: T) => any, any] | ([(mockProxy: T) => any, any])[]) {
+export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProxy: T) => any, any] | ([(mockProxy: T) => any, any])[]) {
   const initCouples = (isInitCouple(initCoupleOrCouples) ? [initCoupleOrCouples] : initCoupleOrCouples) as InitCouple[];
-  if (isMockProxy(stubOrMock)) {
-    stubOrMock(SET_MOCK_PROXY_RETURN_VALUES, initCouples);
+  if (isMockProxy(stubWrapperOrMock)) {
+    stubWrapperOrMock(SET_MOCK_PROXY_RETURN_VALUES, initCouples);
   } else {
-    applyCouplesToStub(stubOrMock, initCouples);
+    applyCouplesToStub(stubWrapperOrMock, initCouples);
   }
 }
 
@@ -882,14 +889,16 @@ export function tstub<T = any>(initializer: InitObjectOrInitCouple<T> | InitObje
     initializers = initializer as (InitObject | InitCouple)[];
   }
   const initCouples: InitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as InitCouple[] | [];
-  const stub = initializers.find(initializer => isObject(initializer));
-  const stubCopy = deepClone(stub) || {};
-
-  if (initCouples) {
-    tset(stubCopy, initCouples);
+  const stubFromInitializer = initializers.find(initializer => isObject(initializer));
+  const stupWrapper: IStubWrapper = {
+    stub: deepClone(stubFromInitializer) || {},
   }
 
-  return stubCopy;
+  if (initCouples) {
+    tset(stupWrapper, initCouples);
+  }
+
+  return stupWrapper.stub;
 }
 
 export default {

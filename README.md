@@ -143,12 +143,12 @@ test.each([
 ```javascript
 test('function that return different values per set of arguments demo', () => {
   // ARRANGE
-  const f = tmock([
-    [m => m(ANY), 0],
-    [m => m(), 1],
-    [m => m('a'), 2],
-    [m => m('b'), 3],
-    [m => m('b', true), 4],
+  const f = tstub([
+    [s => s(TM_ANY), 0],
+    [s => s(), 1],
+    [s => s('a'), 2],
+    [s => s('b'), 3],
+    [s => s('b', true), 4],
   ]);
 
   // ASSERT

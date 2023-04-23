@@ -657,6 +657,16 @@ describe('-------------------- tstub ----------------------', () => {
     expect(stub.f1.prop).toBe(7);    
   });
 
+  test('should be able to create callable stub', () => {
+    // ACT
+    const stub = tm.stub([
+      [s => s(), 1],
+    ]);
+
+    // ASSERT
+    expect(stub()).toBe(1);
+  });
+
   test('should throw error when trying to replace stub at root level', () => {
     // ASSERT
     expect(() => tm.stub([(s) => s, 1])).toThrowError('Cannot replace stab root');
