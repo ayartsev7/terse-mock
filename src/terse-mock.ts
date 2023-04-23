@@ -55,7 +55,7 @@ function toString(data: any, simplify: boolean = false) {
 //    return String(data);
   }
   if (isString(data)) {
-    return '"' + data + '"';
+    return globalOptions.quoteSymbol + data + globalOptions.quoteSymbol;
   }
   return String(data);
 }
@@ -99,10 +99,6 @@ function isMockedFunction(data: any) {
 
 function isInitCouple(data) {
   return data.length === 2 && isFunction(data[0]);
-}
-
-function isClass(data: any) {
-  return isObjectOrClass(data) && data.constructor && data.constructor.name !== 'Object';
 }
 
 function isObjectOrClass(data) {
@@ -172,13 +168,6 @@ function shallowMergeFromTo(from: Object, to: Object, mapper: PropMapperType = (
   return to;
 }
 
-// function deepMergeFromTo(from, to) {
-//   if (!isInstanceofObject(to) || !isInstanceofObject(from)) {
-//     return from;
-//   }
-//   return shallowMergeFromTo(from, to, (val, prop) => deepMergeFromTo(val, to[prop]));
-// }
-
 const defaultProxyTarget = () => undefined;
 
 export interface IExternalMock {
@@ -232,6 +221,7 @@ export interface ITmockOptions {
   automockEnabled: boolean;
   simplifiedOutputEnabled: boolean;
   defaultMockName: string;
+  quoteSymbol: string;
   externalMock?: IExternalMock;
 }
 
@@ -239,11 +229,7 @@ export interface IMockInfo {
   externalMock: any;
 }
 
-// TODO: implement mock once.
-// interface IMockOnce {
-//   remainingTriggerCounter: number;
-//   parent: any;
-// }
+// TODO: implement mock times.
 
 type CallInfo = {
   this: any;
@@ -287,7 +273,7 @@ class Undefinable {
 }
 
 interface ITreeNode {
-  // TODO: make arguments CallInfo + PathBuilder? or just CallInfo and calculate keyFromArgs by PathBuilder static method
+  // TODO: make arguments CallInfo + PathBuilder ? or just CallInfo and calculate keyFromArgs by PathBuilder static method ?
   linkChildViaArgs: (thisArg: any, args: any[], keyFromArgs: ObjectPropertyType, pathToChild: string) => void;
   getArgsToChildPaths(): StringDictionary;
   linkChildViaProp: (prop: ObjectPropertyType, pathToChild: string) => void;
@@ -490,7 +476,7 @@ const sutMockTree = new SutMockTree();
 //-------------------------------- exports ---------------------------------------
 // This function removes all tm proxies from data.
 export function tunmock(data) {
-  if (!isInstanceofObject(data) || isClass(data)) {
+  if (!isInstanceofObject(data)) {
     return data;
   }
   if (isMockProxy(data)) {
@@ -515,7 +501,7 @@ export function tinfo(data: any): IMockInfo {
   };
 }
 
-export function treset(mock?: any) {
+export function treset(mock?: any) { // TODO: this function should not reset data setup by tmock/tset
   if (mock) {
     mock(RESET_MOCK_PROXY);
     return;
@@ -568,6 +554,7 @@ let globalOptions: ITmockOptions = {
   automockEnabled: true,
   simplifiedOutputEnabled: true,
   defaultMockName: 'mock',
+  quoteSymbol: '\'',
 };
 
 export function tglobalopt(options?: Partial<ITmockOptions>): ITmockOptions {

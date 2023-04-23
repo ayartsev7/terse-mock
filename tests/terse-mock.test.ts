@@ -1,4 +1,6 @@
-﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tcalls, tglobalopt, IExternalMock, InitCouple, AnyInitializer } from '../src/terse-mock';
+﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tcalls, tglobalopt, IExternalMock, InitCouple, AnyInitializer,
+  ITmockOptions, tstub,
+} from '../src/terse-mock';
 
 const jestMock: IExternalMock = {
   create: () => jest.fn(),
@@ -56,6 +58,7 @@ test('all exported functions should have analogues in tm', () => {
   expect(tm.set).toBe(tset);
   expect(tm.reset).toBe(treset);
   expect(tm.mock).toBe(tmock);
+  expect(tm.stub).toBe(tstub);
   expect(tm.unmock).toBe(tunmock);
   expect(tm.info).toBe(tinfo);
   expect(tm.calls).toBe(tcalls);
@@ -68,11 +71,13 @@ describe('-------------------- tglobalopt ----------------------', () => {
     const globalOptions = tglobalopt();
 
     // ASSERT
-    expect(globalOptions).toEqual({
+    const expectedGlobalOpt: ITmockOptions = {
       defaultMockName: 'mock',
       simplifiedOutputEnabled: true,
       automockEnabled: true,
-    });
+      quoteSymbol: '\'',
+    };
+    expect(globalOptions).toEqual(expectedGlobalOpt);
   });
 
   test('should be merged options passed to tglobalopt', () => {
@@ -81,14 +86,18 @@ describe('-------------------- tglobalopt ----------------------', () => {
     const globalOptions = tglobalopt({
       defaultMockName: 'mock name',
       simplifiedOutputEnabled: false,
+      // do not pass automockEnabled 
+      quoteSymbol: '"',
     });
 
     // ASSERT
-    expect(globalOptions).toEqual({
+    const expectedGlobalOpt: ITmockOptions = {
       defaultMockName: 'mock name',
       simplifiedOutputEnabled: false,
       automockEnabled: true,
-    });
+      quoteSymbol: '"',
+    };
+    expect(globalOptions).toEqual(expectedGlobalOpt);
 
     tglobalopt(globalOptionsBackup); // restore global options
   });
@@ -272,10 +281,10 @@ describe('----------------------- tmock options ------------------------', () =>
       [1, 'mock(1)', 'mock(1)'],
       [{}, 'mock({})', 'mock({})'],
       [{ '0': 7 }, 'mock({0: 7})', 'mock({...})'],
-      [{ a: '7', b: 0 }, 'mock({a: "7", b: 0})', 'mock({...})'],
+      [{ a: '7', b: 0 }, `mock({a: '7', b: 0})`, 'mock({...})'],
       [[], 'mock([])', 'mock([])'],
       [[1], 'mock([1])', 'mock([...])'],
-      [[`1`, true, {}], 'mock(["1", true, {}])', 'mock([...])'],
+      [[`1`, true, {}], `mock(['1', true, {}])`, 'mock([...])'],
       [new Function(), 'mock(function anonymous)', 'mock(function anonymous)'],
       [() => undefined, 'mock(arrow function)', 'mock(arrow function)'],
       [function () { return null; }, 'mock(function)', 'mock(function)'],
@@ -499,7 +508,7 @@ describe('-------------------- mock behavior ----------------------', () => {
 describe('-------------------- tstub ----------------------', () => {
   test('should accept object as argument', () => {
     // ACT
-    const stub = tm.stub({ a: 1 });
+    const stub = tstub({ a: 1 });
 
     // ASSERT
     expect(stub).toEqual({ a: 1 });
@@ -658,9 +667,8 @@ describe('-------------------- tunmock ---------------------', () => {
   test.each([
     ...SCALARS,
     ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE,
-    new RegExp(''),
     jest.fn(),
-  ])('should keep scalars, functions and classes as is %#', (value) => {
+  ])('should keep scalars and functions as is %#', (value) => {
     // ARRANGE
     const mock = tmock();
     mock.value = value;
@@ -795,6 +803,26 @@ describe('-------------------- tunmock ---------------------', () => {
         a: 'mock',
       },
       b: 7,
+    });
+  });
+
+  test('should unmock classes', () => {
+    // ARRANGE
+    class A {
+      a: number;
+      constructor (a: number) {
+        this.a = a;
+      }
+      f () {}
+    }
+    const mock = tmock();
+
+    // ACT
+    const res = tunmock(new A(mock));
+
+    // ASSERT
+    expect(res).toEqual({
+      a: 'mock',
     });
   });
 });
@@ -963,7 +991,7 @@ describe('-------------------- tset ---------------------', () => {
     const res = tunmock(mock);
     expect(res.f()).toBe(undefined);
     expect(res.f('a')).toBe(1);
-    expect(res.f('b')).toBe('mock.f("b")');
+    expect(res.f('b')).toBe(`mock.f('b')`);
   });
 
   test('should mock call result per set of call arguments', () => {
@@ -1218,7 +1246,7 @@ describe('-------------------- tcalls -------------------', () => {
       'mock2.f()',
       'mock1.g()',
       'mock2()',
-      'mock2.f1("1")',
+      `mock2.f1('1')`,
       'mock2.f1(1)',
       'mock2.f1(1).f2(2)',
       'mock2.f1(1)',
@@ -1233,7 +1261,7 @@ describe('-------------------- tcalls -------------------', () => {
     expect(tcalls(mock2)).toEqual([
       'mock2.f()',
       'mock2()',
-      'mock2.f1("1")',
+      `mock2.f1('1')`,
       'mock2.f1(1)',
       'mock2.f1(1).f2(2)',
       'mock2.f1(1)',
