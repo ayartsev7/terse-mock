@@ -86,7 +86,7 @@ describe('-------------------- tglobalopt ----------------------', () => {
     const globalOptions = tglobalopt({
       defaultMockName: 'mock name',
       simplifiedOutputEnabled: false,
-      // do not pass automockEnabled 
+      // do not pass automockEnabled
       quoteSymbol: '"',
     });
 
@@ -654,7 +654,7 @@ describe('-------------------- tstub ----------------------', () => {
     expect(stub.f.prop2).toBe(null);
 
     expect(stub.f1()).toBe('aaa');
-    expect(stub.f1.prop).toBe(7);    
+    expect(stub.f1.prop).toBe(7);
   });
 
   test('should be able to create callable stub', () => {
@@ -729,7 +729,7 @@ describe('-------------------- tunmock ---------------------', () => {
           { a: 1 },
           undefined,
           null,
-        ]
+        ],
       ],
     ]);
 
@@ -1096,11 +1096,26 @@ describe('------------------- treset --------------------', () => {
 
   test('should erase mock return values', () => {
     // ARRANGE
+    const mock = tmock([
+      [m => m.a.b, 7],
+    ]);
+    expect(mock.a.b).toBe(7);
+
+    // ACT
+    treset(mock.a);
+
+    // ASSERT
+    expect(mock.a.b).toBeDefined();
+    expect(mock.a.b).not.toBe(7);
+  });
+
+  test('should erase mocks at any nesting levels and clear data from unmocked result', () => {
+    // ARRANGE
     const mock = tm.mock([{ aaa: 7 }]);
 
     let res;
 
-    mock.a.e = 7;
+    mock.a.e = 9;
     mock.a.aa.aaa;
     mock.a.aa1.aaa;
     mock.a.aa.aaa1;
@@ -1118,7 +1133,7 @@ describe('------------------- treset --------------------', () => {
         aa1: {
           aaa: 'mock.a.aa1.aaa',
         },
-        e: 7,
+        e: 9,
       },
       b: 'mock.b',
       c: {
@@ -1131,11 +1146,11 @@ describe('------------------- treset --------------------', () => {
     expect(res).toEqual({
       aaa: 7,
       a: {
-        aa: 'value from mock.a.aa',
+        aa: 'mock.a.aa',
         aa1: {
           aaa: 'mock.a.aa1.aaa',
         },
-        e: 7,
+        e: 9,
       },
       b: 'mock.b',
       c: {
@@ -1147,7 +1162,7 @@ describe('------------------- treset --------------------', () => {
     res = tm.unmock(mock);
     expect(res).toEqual({
       aaa: 7,
-      a: 'value from mock.a',
+      a: 'mock.a',
       b: 'mock.b',
       c: {
         c: 'mock.c.c',
@@ -1156,7 +1171,7 @@ describe('------------------- treset --------------------', () => {
 
     tm.reset(mock);
     res = tm.unmock(mock);
-    expect(res).toBe('value from mock'); // TODO: shouldn't it be { aaa: 7 } ?
+    expect(res).toBe('mock'); // TODO: shouldn't it be { aaa: 7 } ?
   });
 
   test('should erase mock calls', () => {
@@ -1318,8 +1333,9 @@ describe('-------------------- tcalls -------------------', () => {
 });
 
 describe('----------------- tinfo ------------------', () => {
-  test.each([...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE)])
-    ('should setup externalMock property for functions if externalMock argument is provided %#', (initialStub) =>
+  test.each([
+    ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE),
+  ])('should setup externalMock property for functions if externalMock argument is provided %#', (initialStub) =>
   {
     // ACT
     const mock = tm.mock([{ f: initialStub }], { externalMock: jestMock });
@@ -1329,8 +1345,9 @@ describe('----------------- tinfo ------------------', () => {
     expect(tinfo(res.f).externalMock).toBeDefined();
   });
 
-  test.each([...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE)])
-    ('should not setup externalMock property for functions if externalMock argument is not provided %#', (initialStub) =>
+  test.each([
+    ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE),
+  ])('should not setup externalMock property for functions if externalMock argument is not provided %#', (initialStub) =>
   {
     // ACT
     const mock = tm.mock([{ f: initialStub }]);

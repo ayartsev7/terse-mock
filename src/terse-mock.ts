@@ -12,7 +12,7 @@ const IS_A_SPY = Symbol('IS_A_SPY');
 const ORIGINAL_FUNCTION = Symbol('ORIGINAL_FUNCTION');
 const IS_A_MOCKED_FUNCTION = Symbol('IS_A_MOCKED_FUNCTION');
 
-function getOrAdd(obj: any, prop: ObjectPropertyType, val: any = {}) {
+function getOrAddObjPropVal(obj: any, prop: ObjectPropertyType, val: any = {}) {
   if (!obj.hasOwnProperty(prop)) {
     obj[prop] = val;
   }
@@ -134,10 +134,10 @@ function deepCloneAndSpyify(source: any, pathBuilder: PathBuilder, externalMock?
     return source;
   }
   if (isObject(source)) {
-    return shallowMergeFromTo(source, {}, (val, prop) => deepCloneAndSpyify(val, pathBuilder.addProp(prop), externalMock, source));
+    return shallowMergeFromTo(source, {}, (val, prop) => deepCloneAndSpyify(val, pathBuilder.withProp(prop), externalMock, source));
   }
   if (isArray(source)) {
-    return source.map((item, index) => deepCloneAndSpyify(item, pathBuilder.addProp(index), externalMock, source));
+    return source.map((item, index) => deepCloneAndSpyify(item, pathBuilder.withProp(index), externalMock, source));
   }
   if (isFunction(source)) {
     if (!isInstanceofObject(source)) {
@@ -197,7 +197,7 @@ function createMockFunction(thisArg: any, externalMock?: IExternalMock, defaultR
 
 function createSpy(pathBuilder: PathBuilder, originalFunction: any, externalMock?: IExternalMock) {
   const spy = function () {
-    totalCallLog.push(pathBuilder.addCall([...arguments]));
+    totalCallLog.push(pathBuilder.withCall([...arguments]));
     if (externalMock) {
       spy[EXTERNAL_MOCK](...arguments);
     }
@@ -231,9 +231,21 @@ export interface IMockInfo {
 
 // TODO: implement mock times.
 
-type CallInfo = {
-  this: any;
-  args: any[];
+class CallInfo {
+  private this_: any;
+  private args_: any[];
+
+  constructor(thisArg: any, args: any[]) {
+    this.this_ = thisArg;
+    this.args_ = args;
+  }
+
+  public get this() {
+    return this.this_;
+  }
+  public get args() {
+    return this.args_;
+  }
 }
 
 type ObjectPropertyType = string | number | symbol;
@@ -277,12 +289,10 @@ class Undefinable {
 }
 
 interface ITreeNode {
-  // TODO: make arguments CallInfo + PathBuilder ? or just CallInfo and calculate keyFromArgs by PathBuilder static method ?
-  linkChildViaArgs: (thisArg: any, args: any[], keyFromArgs: ObjectPropertyType, pathToChild: string) => void;
+  linkChildViaArgs: (callInfo: CallInfo, pathBuilder: PathBuilder) => void;
   getArgsToChildPaths(): StringDictionary;
-  linkChildViaProp: (prop: ObjectPropertyType, pathToChild: string) => void;
+  linkChildViaProp: (pathBuilder: PathBuilder) => void;
   getPropsToChildPaths(): StringDictionary;
-  getArgsToChildPaths(): StringDictionary;
   getValue(): any;
   isFinal(): boolean;
   isTemp(): boolean;
@@ -292,38 +302,40 @@ interface ITreeNode {
 }
 
 class PathBuilder {
+  private parentPathBuilder_: PathBuilder;
   private path_: string  = '';
   private latestPathChunk_: ObjectPropertyType  = '';
   private pathToBeShown_ = '';
-  private options_: ITmockOptions;
+  private simplifiedOutputEnabled_: boolean;
 
-  // TODO: options -> simplified output
-  constructor(path: string, pathToBeShown: string, options: ITmockOptions) {
+  constructor(path: string, pathToBeShown: string, simplifiedOutputEnabled: boolean = false) {
     this.path_ = path;
     this.pathToBeShown_ = pathToBeShown;
-    this.options_ = options;
+    this.simplifiedOutputEnabled_ = simplifiedOutputEnabled;
   }
 
-  public addCall(args: any[]): PathBuilder {
+  public withCall(args: any[]): PathBuilder {
     const latestPathChunk = argsToString(args);
-    const pathToBeShownChunk = !this.options_.simplifiedOutputEnabled ? latestPathChunk : argsToString(args, true);
-    const pathBuilderClone = new PathBuilder(
+    const pathToBeShownChunk = !this.simplifiedOutputEnabled_ ? latestPathChunk : argsToString(args, true);
+    const newPathBuilder = new PathBuilder(
       this.path_ + latestPathChunk,
       this.pathToBeShown_ + pathToBeShownChunk,
-      this.options_);
-    pathBuilderClone.latestPathChunk_ = latestPathChunk;
-    return pathBuilderClone;
+      this.simplifiedOutputEnabled_);
+    newPathBuilder.latestPathChunk_ = latestPathChunk;
+    newPathBuilder.parentPathBuilder_ = this;
+    return newPathBuilder;
   }
 
-  public addProp(prop: ObjectPropertyType): PathBuilder {
-    const latestPathChunkStringied = prop.toString();
-    const latestPathChunkWithSeparators = typeof prop === 'symbol' ? '[' + latestPathChunkStringied + ']' : '.' + latestPathChunkStringied;
-    const pathBuilderClone = new PathBuilder(
+  public withProp(prop: ObjectPropertyType): PathBuilder {
+    const latestPathChunkStringified = prop.toString();
+    const latestPathChunkWithSeparators = typeof prop === 'symbol' ? '[' + latestPathChunkStringified + ']' : '.' + latestPathChunkStringified;
+    const newPathBuilder = new PathBuilder(
       this.path_ + latestPathChunkWithSeparators,
-      this.pathToBeShown_ ? this.pathToBeShown_ + latestPathChunkWithSeparators : latestPathChunkStringied,
-      this.options_);
-    pathBuilderClone.latestPathChunk_ = prop;
-    return pathBuilderClone;
+      this.pathToBeShown_ ? this.pathToBeShown_ + latestPathChunkWithSeparators : latestPathChunkStringified,
+      this.simplifiedOutputEnabled_);
+    newPathBuilder.latestPathChunk_ = prop;
+    newPathBuilder.parentPathBuilder_ = this;
+    return newPathBuilder;
   }
 
   get path() {
@@ -337,6 +349,10 @@ class PathBuilder {
   get latestPathChunk() {
     return this.latestPathChunk_;
   }
+
+  get parentPathBuilder() {
+    return this.parentPathBuilder_;
+  }
 }
 
 class TreeNode implements ITreeNode {
@@ -348,9 +364,9 @@ class TreeNode implements ITreeNode {
   protected calls_: CallInfo[] = [];
   protected value_ = new Undefinable();
 
-  linkChildViaArgs(thisArg: any, args: any[], keyFromArgs: ObjectPropertyType, pathToChild: string) {
-    this.calls_.push({ this: thisArg, args });
-    this.argsToChildPaths_[keyFromArgs] = pathToChild;
+  linkChildViaArgs(callInfo: CallInfo, pathBuilder: PathBuilder) {
+    this.calls_.push(callInfo);
+    this.argsToChildPaths_[pathBuilder.latestPathChunk] = pathBuilder.path;
     this.hasBeenCalled_ = true;
   }
 
@@ -358,8 +374,8 @@ class TreeNode implements ITreeNode {
     return this.argsToChildPaths_;
   }
 
-  linkChildViaProp(prop: ObjectPropertyType, pathToChild: string) {
-    this.propsToChildPaths_[prop] = pathToChild;
+  linkChildViaProp(pathBuilder: PathBuilder) {
+    this.propsToChildPaths_[pathBuilder.latestPathChunk] = pathBuilder.path;
   }
 
   getPropsToChildPaths() {
@@ -382,7 +398,7 @@ class TreeNode implements ITreeNode {
     const f = createMockFunction({}, externalMock);
     if (externalMock) {
       // Call external mock the number of times the original tm mock was called.
-      this.calls_.forEach((call) => f.apply(call.this, call.args));
+      this.calls_.forEach((callInfo) => f.apply(callInfo.this, callInfo.args));
     }
     return f;
   }
@@ -417,28 +433,55 @@ class SutMockTree {
   // Each tree item represents a node
   private tree: { [key: string]: ITreeNode } = {};
 
-  get(path: string): ITreeNode {
+  getNode(path: string): ITreeNode {
     return this.tree[path];
   }
 
-  set(path: string, node: ITreeNode): ITreeNode {
+  setNode(path: string, node: ITreeNode): ITreeNode {
+    // this.deleteSubtree(path); // Uncomment to remove dead nodes and significantly slow down the process.
     this.tree[path] = node;
     return node;
   }
 
-  getOrAddOrReplaceTemp(path: string, node: ITreeNode): ITreeNode {
-    const existingNode = this.tree[path];
-    if (!existingNode || existingNode.isTemp()) {
-      return this.set(path, node);
+  private isNodeNotExistOrIsTempNode(path: string) {
+    const existingNode = this.getNode(path);
+    return !existingNode || existingNode.isTemp();
+  }
+
+  private getOrAddOrReplaceTemp(path: string, node: ITreeNode): ITreeNode {
+    if (this.isNodeNotExistOrIsTempNode(path)) {
+      return this.setNode(path, node);
     }
-    return existingNode;
+    return this.getNode(path);
+  }
+
+  addChildIfNotExistOrReplaceTemp(childNode: ITreeNode, childNodePathBuilder: PathBuilder, callInfo?: CallInfo) {
+    // If parent node is temp node then replace it with a new node that doesn't have a value.
+    // Only leaf nodes can have values.
+    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new TreeNode());
+
+    const childNodePath = childNodePathBuilder.path;
+    if (this.isNodeNotExistOrIsTempNode(childNodePath)) {
+      this.setNode(childNodePath, childNode);
+      if (callInfo) {
+        parentNode.linkChildViaArgs(callInfo, childNodePathBuilder);
+      } else {
+        parentNode.linkChildViaProp(childNodePathBuilder);
+      }
+    }
+  }
+
+  addChild(childNode: ITreeNode, childNodePathBuilder: PathBuilder) {
+    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new TreeNode());
+    this.setNode(childNodePathBuilder.path, childNode);
+    parentNode.linkChildViaProp(childNodePathBuilder);
   }
 
   deleteSubtree(path: string = '') {
     if (!path) {
       this.tree = {};
     }
-    for (const prop in this.tree) {
+    for (const prop in this.tree) { // TODO: commented for 100% coverage. Will be used by treset
       if (prop.length > path.length && (prop.startsWith(path + '.') || prop.startsWith(path + '('))) {
         // By construction: if node index starts with path. or path( then the node is in subtree of node with index = path.
         delete this.tree[prop];
@@ -450,9 +493,6 @@ class SutMockTree {
   // Converts tree to hierarchy of objects and functions based on node paths and node values.
   toObject(path: string, externalMock?: IExternalMock): Undefinable {
     const node = this.tree[path];
-    if (!node) {
-      return new Undefinable();
-    }
     if (node.hasValue()) {
       return new Undefinable(node.getValue());
     }
@@ -477,7 +517,6 @@ let totalMocksCounter = 0;
 
 const sutMockTree = new SutMockTree();
 
-//-------------------------------- exports ---------------------------------------
 // This function removes all tm proxies from data.
 export function tunmock(data) {
   if (!isInstanceofObject(data)) {
@@ -505,7 +544,7 @@ export function tinfo(data: any): IMockInfo {
   };
 }
 
-export function treset(mock?: any) { // TODO: this function should not reset data setup by tmock/tset
+export function treset(mock?: any) { // TODO: this function should not reset data setup by tmock/tset!
   if (mock) {
     mock(RESET_MOCK_PROXY);
     return;
@@ -582,7 +621,7 @@ type PartialOptions = Partial<ITmockOptions>;
 function getStubInitializationProxy(proxyContext: IStubInitializationProxyContext) {
   const initializationProxy = new Proxy(defaultProxyTarget, {
     get(target, prop) {
-      proxyContext.pathBuilder = proxyContext.pathBuilder.addProp(prop);
+      proxyContext.pathBuilder = proxyContext.pathBuilder.withProp(prop);
       let stubRef = proxyContext.stubRef;
       if (isScalar(stubRef)) { // isScalar(stubRef) is deprecated ?
         stubRef = replaceStub({});
@@ -596,7 +635,7 @@ function getStubInitializationProxy(proxyContext: IStubInitializationProxyContex
       return initializationProxy;
     },
     apply(target, thisArg, args) {
-      proxyContext.pathBuilder = proxyContext.pathBuilder.addCall(args);
+      proxyContext.pathBuilder = proxyContext.pathBuilder.withCall(args);
       const key = proxyContext.pathBuilder.latestPathChunk;
       let stubRef = proxyContext.stubRef;
       if (!isMockedFunction(stubRef)) {
@@ -607,7 +646,7 @@ function getStubInitializationProxy(proxyContext: IStubInitializationProxyContex
       stubRef = stubRef[ARGS_TO_RETURN_VALUES];
       proxyContext.prevStubRef = stubRef;
       proxyContext.prevProp = key;
-      proxyContext.stubRef = getOrAdd(stubRef, key);
+      proxyContext.stubRef = getOrAddObjPropVal(stubRef, key);
       return initializationProxy;
     },
   });
@@ -633,33 +672,20 @@ interface IMockInitializationProxyContext {
 function getMockInitializationProxy(proxyContext: IMockInitializationProxyContext) {
   const proxy = new Proxy(defaultProxyTarget, {
     get(target, prop) {
-      const parentNode = proxyContext.tree.getOrAddOrReplaceTemp(proxyContext.pathBuilder.path, new TreeNode()); // TODO: maybe add initial node on tree creation and use .set() instesad?
-      proxyContext.pathBuilder = proxyContext.pathBuilder.addProp(prop); // TODO: create new path builder
-      const node = proxyContext.tree.get(proxyContext.pathBuilder.path);
-      if (!node) {
-        proxyContext.tree.set(proxyContext.pathBuilder.path, new TreeNode()); 
-        // TODO: nodes should be linked automatically!
-        parentNode.linkChildViaProp(proxyContext.pathBuilder.latestPathChunk, proxyContext.pathBuilder.path);
-      }
+      proxyContext.pathBuilder = proxyContext.pathBuilder.withProp(prop);
+      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new TreeNode(), proxyContext.pathBuilder);
       return pickProxy();
     },
     apply(target, thisArg, args) {
-      // TODO: remove code duplicates, share code from get(target, prop)
-      const parentNode = proxyContext.tree.getOrAddOrReplaceTemp(proxyContext.pathBuilder.path, new TreeNode()); // TODO: maybe add initial node on tree creation and use .set() instesad?
-      proxyContext.pathBuilder = proxyContext.pathBuilder.addCall(args);
-      const node = proxyContext.tree.get(proxyContext.pathBuilder.path);
-      if (!node) {
-        proxyContext.tree.set(proxyContext.pathBuilder.path, new TreeNode()); 
-        // TODO: nodes should be linked automatically!
-        parentNode.linkChildViaArgs(thisArg, args, proxyContext.pathBuilder.latestPathChunk, proxyContext.pathBuilder.path);
-      }
+      proxyContext.pathBuilder = proxyContext.pathBuilder.withCall(args);
+      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new TreeNode(), proxyContext.pathBuilder, new CallInfo(thisArg, args));
       return pickProxy();
     },
   });
   return proxy;
 
   function pickProxy() {
-    const node = proxyContext.tree.get(proxyContext.pathBuilder.path);
+    const node = proxyContext.tree.getNode(proxyContext.pathBuilder.path);
     if (node.isFinal()) {
       const value = node.getValue();
       const stubProxyContext: IStubInitializationProxyContext = {
@@ -667,7 +693,7 @@ function getMockInitializationProxy(proxyContext: IMockInitializationProxyContex
         prevStubRef: value,
         prevProp: '',
         stubReplacement: undefined,
-        pathBuilder: new PathBuilder('', '', {} as any), // TODO: get rid of any
+        pathBuilder: new PathBuilder('', ''),
       };
       proxyContext.stubProxyContext = stubProxyContext;
       return getStubInitializationProxy(stubProxyContext);
@@ -695,13 +721,12 @@ function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder,
 
     const val = deepCloneAndSpyify(initCouple[1], proxyContext.pathBuilder, options.externalMock);
     if (!stubProxyContext) {
-      sutMockTree.deleteSubtree(path); // TODO: shouldn't this be done on sutMockTree.set ?
-      sutMockTree.set(path, new TreeNodeFinal(val));
+      sutMockTree.setNode(path, new TreeNodeFinal(val));
     } else {
       if (stubProxyContext.stubReplacement) {
-        sutMockTree.set(path, new TreeNodeFinal(stubProxyContext.stubReplacement));
+        sutMockTree.setNode(path, new TreeNodeFinal(stubProxyContext.stubReplacement));
       } else if (!stubProxyContext.prevProp) {
-        sutMockTree.set(path, new TreeNodeFinal(val));
+        sutMockTree.setNode(path, new TreeNodeFinal(val));
       }
       if (stubProxyContext.prevProp) {
         stubProxyContext.prevStubRef[stubProxyContext.prevProp] = val;
@@ -710,19 +735,17 @@ function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder,
   });
 }
 
-function traversePropOrCall(pathBuilder: PathBuilder, options: ITmockOptions, prop?: ObjectPropertyType, callInfo?: CallInfo) {
-  const newPathBuilder = callInfo ? pathBuilder.addCall(callInfo.args) : pathBuilder.addProp(prop!);
-
-  const nodeFromSutMockTree = sutMockTree.get(newPathBuilder.path);
+function traversePropOrCall(pathBuilder: PathBuilder, options: ITmockOptions, callInfo?: CallInfo) {
+  const nodeFromSutMockTree = sutMockTree.getNode(pathBuilder.path);
   if (nodeFromSutMockTree?.isFinal()) {
     return nodeFromSutMockTree.getValue();
   }
   if (callInfo) {
-    const pathBuilderAny = pathBuilder.addCall([TM_ANY]); // TODO: use static function of PathBuilder
-    const nodeFromSutMockTree = sutMockTree.get(pathBuilderAny.path); // TODO: reuse code
+    const pathBuilderAny = pathBuilder.parentPathBuilder.withCall([TM_ANY]);
+    const nodeFromSutMockTree = sutMockTree.getNode(pathBuilderAny.path); // TODO: reuse code
     if (nodeFromSutMockTree?.isFinal()) {
       return nodeFromSutMockTree.getValue();
-    }  
+    }
   }
 
   if (!options.automockEnabled) {
@@ -730,16 +753,12 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: ITmockOptions, pr
     return undefined;
   }
 
-  sutMockTree.getOrAddOrReplaceTemp(newPathBuilder.path, new TreeNodeTemp(/*'value from ' + */newPathBuilder.pathToBeShown));
-  const parentNode = sutMockTree.getOrAddOrReplaceTemp(pathBuilder.path, new TreeNode()); // TODO: maybe add initial node on tree creation and use .set() instesad because parent node should always exist by construction
+  sutMockTree.addChildIfNotExistOrReplaceTemp(new TreeNodeTemp(pathBuilder.pathToBeShown), pathBuilder, callInfo);
   if (callInfo) {
-    parentNode.linkChildViaArgs(callInfo.this, callInfo.args, newPathBuilder.latestPathChunk, newPathBuilder.path);
-    totalCallLog.push(newPathBuilder);
-  } else {
-    parentNode.linkChildViaProp(newPathBuilder.latestPathChunk, newPathBuilder.path);
+    totalCallLog.push(pathBuilder);
   }
 
-  return getSutProxy(newPathBuilder, options); // TODO: is it possible to return proxy, not getSutProxy? (no, because)
+  return getSutProxy(pathBuilder, options);
 }
 
 function getSutProxy(pathBuilder: PathBuilder, options: ITmockOptions) {
@@ -753,25 +772,16 @@ function getSutProxy(pathBuilder: PathBuilder, options: ITmockOptions) {
         case MOCK_PROXY_NAME: return options.defaultMockName;
         case MOCK_PROXY_TO_OBJECT:
           const treeAsObject = sutMockTree.toObject(pathBuilder.path, options.externalMock);
-          return treeAsObject.hasValue() ? treeAsObject.getValue() : options.defaultMockName;      
+          return treeAsObject.getValue();
         case 'hasOwnProperty': return () => true;
         case Symbol.toPrimitive: return target as any; // Prevent from 'TypeError: Cannot convert object to primitive value'.
       }
 
-      return traversePropOrCall(pathBuilder, options, prop);
+      return traversePropOrCall(pathBuilder.withProp(prop), options);
     },
 
     set(target, prop, value) {
-      const newPathBuilder = pathBuilder.addProp(prop);
-      const newPath = newPathBuilder.path;
-
-      // Construct/traverse sutMockTree.
-      const node = sutMockTree.getOrAddOrReplaceTemp(path, new TreeNode());
-      node.getPropsToChildPaths()[newPathBuilder.latestPathChunk.toString()] = newPath; // TODO: tree should do this
-
-      // Value assigned to a node overrides node subtree.
-      sutMockTree.deleteSubtree(newPath);
-      sutMockTree.set(newPath, new TreeNodeFinal(value));
+      sutMockTree.addChild(new TreeNodeFinal(value), pathBuilder.withProp(prop));
       return true;
     },
 
@@ -780,19 +790,20 @@ function getSutProxy(pathBuilder: PathBuilder, options: ITmockOptions) {
         const firstArg = args[0];
         // Handle special arguments.
         if (firstArg === SET_MOCK_PROXY_RETURN_VALUES) {
-          applyCouplesToMock(args[1], pathBuilder, options);
+          const initCoulpes = args[1];
+          applyCouplesToMock(initCoulpes, pathBuilder, options);
           return sutProxy;
         } else if (firstArg === RESET_MOCK_PROXY) {
-          if (sutMockTree.get(path)) {
+          if (sutMockTree.getNode(path)) {
             sutMockTree.deleteSubtree(path);
-            sutMockTree.set(path, new TreeNodeFinal('value from ' + pathBuilder.pathToBeShown));
+            sutMockTree.setNode(path, new TreeNodeTemp(pathBuilder.pathToBeShown));
           }
           totalCallLog = totalCallLog.filter((call) => !call.path.startsWith(path));
           return undefined;
         }
       }
 
-      return traversePropOrCall(pathBuilder, options, undefined, { this: thisArg, args });
+      return traversePropOrCall(pathBuilder.withCall(args), options, new CallInfo(thisArg, args));
     },
   });
 
@@ -859,7 +870,8 @@ export function tmock<T = any>(
   }
 
   const path = `__ROOT${totalMocksCounter++}__`;
-  const pathBuilder = new PathBuilder(path, options.defaultMockName, options);
+  const pathBuilder = new PathBuilder(path, options.defaultMockName, options.simplifiedOutputEnabled);
+  sutMockTree.setNode(path, new TreeNodeTemp(options.defaultMockName));
 
   const initCouples: InitCouple[] =
     parsedArgs.initializers?.filter(initializer => isArray(initializer) && initializer.length === 2) as InitCouple[] || [];
@@ -909,6 +921,6 @@ export default {
   reset: treset,
   unmock: tunmock,
   info: tinfo,
-  calls: tcalls, // make proxy specially handled functions like proxy.tcalls ?
+  calls: tcalls,
   globalopt: tglobalopt,
 };

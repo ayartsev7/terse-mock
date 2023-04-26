@@ -63,11 +63,10 @@ test('some test', () => {
 ```
 Unmocking is required to turn result into plain js type before checking expectations.
 ## Features
-
 - [Deep automocking](#deep-automocking)
 - [Easy setting mock values](#easy-setting-mock-values)
-- [Creating functions that return different values per set of arguments](#creating-functions-that-return-different-values-per-set-of-arguments)
 - [Stubs](#stubs)
+- [Creating functions that return different values per set of arguments](#creating-functions-that-return-different-values-per-set-of-arguments)
 - [Interface mocks](#interface-mocks)
 - [Call history](#call-history)
 - [Automatic spies](#automatic-spies)
@@ -97,7 +96,7 @@ function sut(data) {
   };
 }
 ```
-The shortest test could look like this:
+The shortest test could be like:
 ```javascript
 test('shortest test demo', () => {
   // ARRANGE
@@ -139,26 +138,6 @@ test.each([
   expect(res.prop2).toEqual(expectedResult);
 });
 ```
-## Creating functions that return different values per set of arguments
-```javascript
-test('function that return different values per set of arguments demo', () => {
-  // ARRANGE
-  const f = tstub([
-    [s => s(TM_ANY), 0],
-    [s => s(), 1],
-    [s => s('a'), 2],
-    [s => s('b'), 3],
-    [s => s('b', true), 4],
-  ]);
-
-  // ASSERT
-  expect(f('something')).toEqual(0);
-  expect(f()).toEqual(1);
-  expect(f('a')).toEqual(2);
-  expect(f('b')).toEqual(3);
-  expect(f('b', true)).toEqual(4);
-});
-```
 ## Stubs
 If one need neither automocking nor checking function calls then it worth using stubs rather then mocks. terse-mock stubs are plain js objects, fast and straightford.
 ```javascript
@@ -177,6 +156,26 @@ test('stub demo', () => {
     b: { bb: 1 },
   });
   expect(stub.f()).toEqual('result');
+});
+```
+## Creating functions that return different values per set of arguments
+```javascript
+test('function that return different values per set of arguments demo', () => {
+  // ARRANGE
+  const f = tstub([
+    [s => s(TM_ANY), 0],
+    [s => s(), 1],
+    [s => s('a'), 2],
+    [s => s('b'), 3],
+    [s => s('b', true), 4],
+  ]);
+
+  // ASSERT
+  expect(f('something')).toEqual(0);
+  expect(f()).toEqual(1);
+  expect(f('a')).toEqual(2);
+  expect(f('b')).toEqual(3);
+  expect(f('b', true)).toEqual(4);
 });
 ```
 ## Interface mocks
@@ -318,24 +317,24 @@ By default `tcalls` uses simplified output - it does not expose the contents of 
 ```javascript
 test('simplified output enabled/disabled demo', () => {
   // ARRANGE
-  const mock = tmock();
-  const mockSimplifiedOutput = tmock({ simplifiedOutputEnabled: false });
+  const mockSimplified = tmock();
+  const mock = tmock({ simplifiedOutputEnabled: false });
 
   // ACT
-  mock.f(
+  mockSimplified.f(
     1,
     { a: 1, b: 2, c: 3 },
     [1, 2, 3]
   );
-  mockSimplifiedOutput.f(
+  mock.f(
     1,
     { a: 1, b: 2, c: 3 },
     [1, 2, 3],
   );
 
   // ASSERT
-  expect(tcalls(mock)[0]).toBe('mock.f(1, {...}, [...])');
-  expect(tcalls(mockSimplifiedOutput)[0]).toBe('mock.f(1, {a: 1, b: 2, c: 3}, [1, 2, 3])');
+  expect(tcalls(mockSimplified)[0]).toBe('mock.f(1, {...}, [...])');
+  expect(tcalls(mock)[0]).toBe('mock.f(1, {a: 1, b: 2, c: 3}, [1, 2, 3])');
 });
 ```
 ### Global module options

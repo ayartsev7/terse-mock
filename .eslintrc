@@ -1,0 +1,32 @@
+{
+    "root": true,
+    "env": {
+        "commonjs": true,
+        "jest": true
+    },
+    "parser": "@typescript-eslint/parser",
+    "plugins": ["@typescript-eslint"],
+    "rules": {
+        "no-const-assign": "warn",
+        "no-this-before-super": "warn",
+        "no-new-wrappers":"error",
+        "no-undef": "warn",
+        "no-unreachable": "warn",
+        "no-trailing-spaces": "error",
+        "no-unused-vars": "off", // note you must disable the base rule as it can report incorrect errors. See https://github.com/typescript-eslint/typescript-eslint/blob/master/packages/eslint-plugin/docs/rules/no-unused-vars.md
+        "@typescript-eslint/no-unused-vars": ["error"],
+
+        "constructor-super": "warn",
+        "valid-typeof": "warn",
+
+        "indent": "off", // note you must disable the base rule as it can report incorrect errors. See https://github.com/typescript-eslint/typescript-eslint/blob/master/packages/eslint-plugin/docs/rules/indent.md
+        "@typescript-eslint/indent": ["error", 2, { "SwitchCase": 1, "ignoreComments": true, "ignoredNodes": ["TemplateLiteral *"] }],
+
+        "quotes": ["error", "single", { "avoidEscape" : true, "allowTemplateLiterals": true }],
+        "keyword-spacing": ["error", { "after": true }],
+        "block-spacing": "error",
+        "prefer-const": "error",
+        "comma-dangle": [ "error", "always-multiline" ],
+        "@typescript-eslint/member-delimiter-style": ["error"]
+    }
+}
