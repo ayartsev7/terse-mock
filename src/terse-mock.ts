@@ -1,16 +1,16 @@
-export const TM_ANY = Symbol('__TM_ANY__');
-const ANY_ARGS = argsToString([TM_ANY]);
-const MOCK_PROXY_TRAVERSED_PATH = '__MOCK_PROXY_TRAVERSED_PATH__';
-const MOCK_PROXY_NAME = '__MOCK_PROXY_NAME__';
-const MOCK_PROXY_TO_OBJECT = '__MOCK_PROXY_TO_OBJECT__';
-const RESET_MOCK_PROXY = '__RESET_MOCK_PROXY__';
-const SET_MOCK_PROXY_RETURN_VALUES = '__SET_MOCK_PROXY_RETURN_VALUES__';
+const MOCK_PROXY_PATHBUILDER = Symbol('MOCK_PROXY_PATHBUILDER');
+const MOCK_PROXY_NAME = Symbol('MOCK_PROXY_NAME');
+const MOCK_PROXY_TO_OBJECT = Symbol('MOCK_PROXY_TO_OBJECT');
+const RESET_MOCK_PROXY = Symbol('RESET_MOCK_PROXY');
+const SET_MOCK_PROXY_RETURN_VALUES = Symbol('SET_MOCK_PROXY_RETURN_VALUES');
 const EXTERNAL_MOCK = Symbol('EXTERNAL_MOCK');
 const ARGS_TO_RETURN_VALUES = Symbol('ARGS_TO_RETURN_VALUES');
 const IS_A_MOCK_PROXY = Symbol('IS_A_MOCK_PROXY');
 const IS_A_SPY = Symbol('IS_A_SPY');
 const ORIGINAL_FUNCTION = Symbol('ORIGINAL_FUNCTION');
 const IS_A_MOCKED_FUNCTION = Symbol('IS_A_MOCKED_FUNCTION');
+export const TM_ANY = Symbol('TM_ANY');
+const ANY_ARGS = argsToString([TM_ANY]);
 
 function getOrAddObjPropVal(obj: any, prop: ObjectPropertyType, val: any = {}) {
   if (!obj.hasOwnProperty(prop)) {
@@ -174,8 +174,8 @@ export interface IExternalMock {
   create: () => any;
 }
 
-function createMockFunction(thisArg: any, externalMock?: IExternalMock, defaultReturnSetter: (context: IMockFunctionContext) => any = () => undefined) {
-  const context: IMockFunctionContext = {
+function createMockFunction(thisArg: any, externalMock?: IExternalMock, defaultReturnSetter: (context: MockFunctionContext) => any = () => undefined) {
+  const context: MockFunctionContext = {
     argsToReturnValues: {},
   };
 
@@ -212,12 +212,12 @@ function createSpy(pathBuilder: PathBuilder, originalFunction: any, externalMock
   return spy;
 }
 
-interface IMockFunctionContext {
+type MockFunctionContext = {
   //argsToReturnValues: Map<string, any>;
   argsToReturnValues: { [key: string]: any };
 }
 
-export interface ITmockOptions {
+export type TmockOptions = {
   automockEnabled: boolean;
   simplifiedOutputEnabled: boolean;
   defaultMockName: string;
@@ -225,7 +225,7 @@ export interface ITmockOptions {
   externalMock?: IExternalMock;
 }
 
-export interface IMockInfo {
+export type MockInfo = {
   externalMock: any;
 }
 
@@ -250,7 +250,7 @@ class CallInfo {
 
 type ObjectPropertyType = string | number | symbol;
 
-interface IStubInitializationProxyContext {
+type StubInitializationProxyContext = {
   stubRef: any;
   prevStubRef: any;
   prevProp: ObjectPropertyType;
@@ -258,7 +258,7 @@ interface IStubInitializationProxyContext {
   pathBuilder: PathBuilder;
 };
 
-interface IStubWrapper {
+type StubWrapper = {
   stub: any;
 }
 
@@ -288,28 +288,17 @@ class Undefinable {
   }
 }
 
-interface ITreeNode {
-  linkChildViaArgs: (callInfo: CallInfo, pathBuilder: PathBuilder) => void;
-  getArgsToChildPaths(): StringDictionary;
-  linkChildViaProp: (pathBuilder: PathBuilder) => void;
-  getPropsToChildPaths(): StringDictionary;
-  getValue(): any;
-  isFinal(): boolean;
-  isTemp(): boolean;
-  hasBeenCalled(): boolean;
-  hasValue(): boolean;
-  toMockFunction(externalMock?: IExternalMock): () => any;
-}
-
 class PathBuilder {
   private parentPathBuilder_: PathBuilder;
+  private groupId_: string  = '';
   private path_: string  = '';
   private latestPathChunk_: ObjectPropertyType  = '';
   private pathToBeShown_ = '';
   private simplifiedOutputEnabled_: boolean;
 
-  constructor(path: string, pathToBeShown: string, simplifiedOutputEnabled: boolean = false) {
-    this.path_ = path;
+  constructor(groupId: string, pathToBeShown: string, simplifiedOutputEnabled: boolean = false) {
+    this.groupId_ = groupId;
+    this.path_ = '';
     this.pathToBeShown_ = pathToBeShown;
     this.simplifiedOutputEnabled_ = simplifiedOutputEnabled;
   }
@@ -318,9 +307,10 @@ class PathBuilder {
     const latestPathChunk = argsToString(args);
     const pathToBeShownChunk = !this.simplifiedOutputEnabled_ ? latestPathChunk : argsToString(args, true);
     const newPathBuilder = new PathBuilder(
-      this.path_ + latestPathChunk,
+      this.groupId_,
       this.pathToBeShown_ + pathToBeShownChunk,
       this.simplifiedOutputEnabled_);
+    newPathBuilder.path_ = this.path_ + latestPathChunk;
     newPathBuilder.latestPathChunk_ = latestPathChunk;
     newPathBuilder.parentPathBuilder_ = this;
     return newPathBuilder;
@@ -330,12 +320,17 @@ class PathBuilder {
     const latestPathChunkStringified = prop.toString();
     const latestPathChunkWithSeparators = typeof prop === 'symbol' ? '[' + latestPathChunkStringified + ']' : '.' + latestPathChunkStringified;
     const newPathBuilder = new PathBuilder(
-      this.path_ + latestPathChunkWithSeparators,
+      this.groupId_,
       this.pathToBeShown_ ? this.pathToBeShown_ + latestPathChunkWithSeparators : latestPathChunkStringified,
       this.simplifiedOutputEnabled_);
+    newPathBuilder.path_ = this.path_ + latestPathChunkWithSeparators,
     newPathBuilder.latestPathChunk_ = prop;
     newPathBuilder.parentPathBuilder_ = this;
     return newPathBuilder;
+  }
+
+  get groupId() {
+    return this.groupId_;
   }
 
   get path() {
@@ -355,19 +350,35 @@ class PathBuilder {
   }
 }
 
-class TreeNode implements ITreeNode {
+class MockTreeNode {
   protected propsToChildPaths_ = {};
   protected argsToChildPaths_ = {};
   protected isFinal_ = false;
   protected isTemp_ = false;
-  protected hasBeenCalled_: boolean = false;
   protected calls_: CallInfo[] = [];
   protected value_ = new Undefinable();
+
+  static fromUserNodeAndSutNode(userNode: MockTreeNode, sutNode: MockTreeNode): MockTreeNode {
+    if (sutNode.isFinal()) {
+      return sutNode;
+    }
+    if (userNode.isFinal()) {
+      return userNode;
+    }
+    const node = new MockTreeNode();
+    node.propsToChildPaths_ = { ...userNode.propsToChildPaths_, ...sutNode.propsToChildPaths_ };
+    node.argsToChildPaths_ = { ...userNode.argsToChildPaths_, ...sutNode.argsToChildPaths_ };
+    node.isFinal_ = false;
+    node.calls_ = [ ...userNode.calls_, ...sutNode.calls_ ];
+    if (userNode.isTemp_ && sutNode.isTemp_) {
+      node.value_ = sutNode.value_;
+    }
+    return node;
+  }
 
   linkChildViaArgs(callInfo: CallInfo, pathBuilder: PathBuilder) {
     this.calls_.push(callInfo);
     this.argsToChildPaths_[pathBuilder.latestPathChunk] = pathBuilder.path;
-    this.hasBeenCalled_ = true;
   }
 
   getArgsToChildPaths() {
@@ -383,7 +394,7 @@ class TreeNode implements ITreeNode {
   }
 
   hasBeenCalled() {
-    return this.hasBeenCalled_;
+    return this.calls_.length > 0;
   }
 
   hasValue() {
@@ -412,7 +423,7 @@ class TreeNode implements ITreeNode {
   }
 }
 
-class TreeNodeTemp extends TreeNode {
+class TreeNodeTemp extends MockTreeNode {
   constructor(value: any) {
     super();
     this.isTemp_ = true;
@@ -420,7 +431,7 @@ class TreeNodeTemp extends TreeNode {
   }
 }
 
-class TreeNodeFinal extends TreeNode {
+class TreeNodeFinal extends MockTreeNode {
   constructor(value: any) {
     super();
     this.isFinal_ = true;
@@ -428,16 +439,31 @@ class TreeNodeFinal extends TreeNode {
   }
 }
 
-class SutMockTree {
+class MockTree {
   // TODO: describe.
-  // Each tree item represents a node
-  private tree: { [key: string]: ITreeNode } = {};
+  // Each tree item represents a node.
+  private tree: { [key: string]: MockTreeNode } = {};
 
-  getNode(path: string): ITreeNode {
+  static fromUserTreeAndSutTree(userTree: MockTree, sutTree: MockTree): MockTree {
+    const result = new MockTree();
+    for (const prop in userTree.tree) {
+      const userNode = userTree.tree[prop];
+      const sutNode = sutTree.tree[prop];
+      result.tree[prop] = sutNode ? MockTreeNode.fromUserNodeAndSutNode(userNode as MockTreeNode, sutNode as MockTreeNode) : userNode;
+    }
+    for (const prop in sutTree.tree) {
+      if (!result.tree[prop]) {
+        result.tree[prop] = sutTree.tree[prop];
+      }
+    }
+    return result;
+  }
+
+  getNode(path: string): MockTreeNode {
     return this.tree[path];
   }
 
-  setNode(path: string, node: ITreeNode): ITreeNode {
+  setNode(path: string, node: MockTreeNode): MockTreeNode {
     // this.deleteSubtree(path); // Uncomment to remove dead nodes and significantly slow down the process.
     this.tree[path] = node;
     return node;
@@ -448,17 +474,17 @@ class SutMockTree {
     return !existingNode || existingNode.isTemp();
   }
 
-  private getOrAddOrReplaceTemp(path: string, node: ITreeNode): ITreeNode {
+  private getOrAddOrReplaceTemp(path: string, node: MockTreeNode): MockTreeNode {
     if (this.isNodeNotExistOrIsTempNode(path)) {
       return this.setNode(path, node);
     }
     return this.getNode(path);
   }
 
-  addChildIfNotExistOrReplaceTemp(childNode: ITreeNode, childNodePathBuilder: PathBuilder, callInfo?: CallInfo) {
+  addChildIfNotExistOrReplaceTemp(childNode: MockTreeNode, childNodePathBuilder: PathBuilder, callInfo?: CallInfo) {
     // If parent node is temp node then replace it with a new node that doesn't have a value.
     // Only leaf nodes can have values.
-    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new TreeNode());
+    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new MockTreeNode());
 
     const childNodePath = childNodePathBuilder.path;
     if (this.isNodeNotExistOrIsTempNode(childNodePath)) {
@@ -471,26 +497,35 @@ class SutMockTree {
     }
   }
 
-  addChild(childNode: ITreeNode, childNodePathBuilder: PathBuilder) {
-    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new TreeNode());
+  addChild(childNode: MockTreeNode, childNodePathBuilder: PathBuilder) {
+    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new MockTreeNode());
     this.setNode(childNodePathBuilder.path, childNode);
     parentNode.linkChildViaProp(childNodePathBuilder);
   }
 
-  deleteSubtree(path: string = '') {
-    if (!path) {
-      this.tree = {};
-    }
-    for (const prop in this.tree) { // TODO: commented for 100% coverage. Will be used by treset
-      if (prop.length > path.length && (prop.startsWith(path + '.') || prop.startsWith(path + '('))) {
+  deleteSubtree(path: string) {
+    for (const key in this.tree) {
+      if (key.length > path.length && (key.startsWith(path + '.') || key.startsWith(path + '('))) {
         // By construction: if node index starts with path. or path( then the node is in subtree of node with index = path.
-        delete this.tree[prop];
+        delete this.tree[key];
       }
     }
     delete this.tree[path];
   }
 
-  // Converts tree to hierarchy of objects and functions based on node paths and node values.
+  forEachSubtreeNode(path: string, action: (node: MockTreeNode) => void) {
+    for (const key in this.tree) {
+      if (key.length > path.length && (key.startsWith(path + '.') || key.startsWith(path + '('))) {
+        // By construction: if node index starts with path. or path( then the node is in subtree of node with index = path.
+        action(this.tree[key])
+      }
+    }
+    if (this.tree[path]) {
+      action(this.tree[path]);
+    }
+  }
+
+  // Convert tree to hierarchy of objects and functions based on node paths and node values.
   toObject(path: string, externalMock?: IExternalMock): Undefinable {
     const node = this.tree[path];
     if (node.hasValue()) {
@@ -515,7 +550,8 @@ let totalCallLog: PathBuilder[] = [];
 
 let totalMocksCounter = 0;
 
-const sutMockTree = new SutMockTree();
+const userMockTrees: MockTree[] = [];
+let sutMockTrees: MockTree[] = [];
 
 // This function removes all tm proxies from data.
 export function tunmock(data) {
@@ -538,7 +574,7 @@ export function tunmock(data) {
   return result;
 }
 
-export function tinfo(data: any): IMockInfo {
+export function tinfo(data: any): MockInfo {
   return {
     externalMock: data[EXTERNAL_MOCK],
   };
@@ -549,7 +585,7 @@ export function treset(mock?: any) { // TODO: this function should not reset dat
     mock(RESET_MOCK_PROXY);
     return;
   }
-  sutMockTree.deleteSubtree();
+  sutMockTrees = [];
   totalCallLog = [];
 }
 
@@ -557,13 +593,15 @@ export function tcalls(mock?: any): string[] {
   if (!mock) {
     return totalCallLog.map((call) => call.pathToBeShown);
   }
-  const path = mock[MOCK_PROXY_TRAVERSED_PATH];
-  return totalCallLog.filter((call) => call.path.startsWith(path)).map((call) => call.pathToBeShown);
+  const pathBuilder = mock[MOCK_PROXY_PATHBUILDER] as PathBuilder;
+  return totalCallLog
+    .filter((call) => call.groupId == pathBuilder.groupId && call.path.startsWith(pathBuilder.path))
+    .map((call) => call.pathToBeShown);
 }
 
-function applyCouplesToStub(stubWrapper: IStubWrapper, initCouples: InitCouple[]) {
+function applyCouplesToStub(stubWrapper: StubWrapper, initCouples: InitCouple[]) {
   initCouples.forEach(initCouple => {
-    const proxyContext: IStubInitializationProxyContext = {
+    const proxyContext: StubInitializationProxyContext = {
       stubRef: stubWrapper.stub,
       prevStubRef: stubWrapper.stub,
       prevProp: '',
@@ -596,14 +634,14 @@ export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProx
   }
 }
 
-let globalOptions: ITmockOptions = {
+let globalOptions: TmockOptions = {
   automockEnabled: true,
   simplifiedOutputEnabled: true,
   defaultMockName: 'mock',
   quoteSymbol: '\'',
 };
 
-export function tglobalopt(options?: Partial<ITmockOptions>): ITmockOptions {
+export function tglobalopt(options?: Partial<TmockOptions>): TmockOptions {
   if (!options) {
     return globalOptions;
   }
@@ -616,9 +654,9 @@ export type InitCouple<T = any> = [(mockProxy: T) => any, any];
 export type InitObject = {[index: string]: unknown};
 type InitObjectOrInitCouple<T> = (T extends {} ? Partial<T> : InitCouple<T>) | InitCouple<T>;
 export type AnyInitializer = InitObject | InitCouple;
-type PartialOptions = Partial<ITmockOptions>;
+type PartialOptions = Partial<TmockOptions>;
 
-function getStubInitializationProxy(proxyContext: IStubInitializationProxyContext) {
+function getStubInitializationProxy(proxyContext: StubInitializationProxyContext) {
   const initializationProxy = new Proxy(defaultProxyTarget, {
     get(target, prop) {
       proxyContext.pathBuilder = proxyContext.pathBuilder.withProp(prop);
@@ -663,22 +701,22 @@ function getStubInitializationProxy(proxyContext: IStubInitializationProxyContex
   }
 }
 
-interface IMockInitializationProxyContext {
-  tree: SutMockTree;
+type MockInitializationProxyContext = {
+  tree: MockTree;
   pathBuilder: PathBuilder;
-  stubProxyContext?: IStubInitializationProxyContext;
+  stubProxyContext?: StubInitializationProxyContext;
 }
 
-function getMockInitializationProxy(proxyContext: IMockInitializationProxyContext) {
+function getMockInitializationProxy(proxyContext: MockInitializationProxyContext) {
   const proxy = new Proxy(defaultProxyTarget, {
     get(target, prop) {
       proxyContext.pathBuilder = proxyContext.pathBuilder.withProp(prop);
-      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new TreeNode(), proxyContext.pathBuilder);
+      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new MockTreeNode(), proxyContext.pathBuilder);
       return pickProxy();
     },
     apply(target, thisArg, args) {
       proxyContext.pathBuilder = proxyContext.pathBuilder.withCall(args);
-      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new TreeNode(), proxyContext.pathBuilder, new CallInfo(thisArg, args));
+      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new MockTreeNode(), proxyContext.pathBuilder, new CallInfo(thisArg, args));
       return pickProxy();
     },
   });
@@ -688,7 +726,7 @@ function getMockInitializationProxy(proxyContext: IMockInitializationProxyContex
     const node = proxyContext.tree.getNode(proxyContext.pathBuilder.path);
     if (node.isFinal()) {
       const value = node.getValue();
-      const stubProxyContext: IStubInitializationProxyContext = {
+      const stubProxyContext: StubInitializationProxyContext = {
         stubRef: value,
         prevStubRef: value,
         prevProp: '',
@@ -702,10 +740,11 @@ function getMockInitializationProxy(proxyContext: IMockInitializationProxyContex
   }
 }
 
-function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder, options: ITmockOptions) {
+function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder, options: TmockOptions) {
+  const userMockTree = userMockTrees[pathBuilder.groupId];
   initCouples.forEach(initCouple => {
-    const proxyContext: IMockInitializationProxyContext = {
-      tree: sutMockTree,
+    const proxyContext: MockInitializationProxyContext = {
+      tree: userMockTree,
       pathBuilder: pathBuilder,
     };
 
@@ -721,12 +760,12 @@ function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder,
 
     const val = deepCloneAndSpyify(initCouple[1], proxyContext.pathBuilder, options.externalMock);
     if (!stubProxyContext) {
-      sutMockTree.setNode(path, new TreeNodeFinal(val));
+      userMockTree.setNode(path, new TreeNodeFinal(val));
     } else {
       if (stubProxyContext.stubReplacement) {
-        sutMockTree.setNode(path, new TreeNodeFinal(stubProxyContext.stubReplacement));
+        userMockTree.setNode(path, new TreeNodeFinal(stubProxyContext.stubReplacement));
       } else if (!stubProxyContext.prevProp) {
-        sutMockTree.setNode(path, new TreeNodeFinal(val));
+        userMockTree.setNode(path, new TreeNodeFinal(val));
       }
       if (stubProxyContext.prevProp) {
         stubProxyContext.prevStubRef[stubProxyContext.prevProp] = val;
@@ -735,17 +774,29 @@ function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder,
   });
 }
 
-function traversePropOrCall(pathBuilder: PathBuilder, options: ITmockOptions, callInfo?: CallInfo) {
-  const nodeFromSutMockTree = sutMockTree.getNode(pathBuilder.path);
-  if (nodeFromSutMockTree?.isFinal()) {
-    return nodeFromSutMockTree.getValue();
+function getNodeToReturnValue(tree: MockTree, pathBuilder: PathBuilder, callInfo?: CallInfo) {
+  const node = tree.getNode(pathBuilder.path);
+  if (node?.isFinal()) {
+    return node;
   }
   if (callInfo) {
     const pathBuilderAny = pathBuilder.parentPathBuilder.withCall([TM_ANY]);
-    const nodeFromSutMockTree = sutMockTree.getNode(pathBuilderAny.path); // TODO: reuse code
-    if (nodeFromSutMockTree?.isFinal()) {
-      return nodeFromSutMockTree.getValue();
+    const node = tree.getNode(pathBuilderAny.path); // TODO: reuse code
+    if (node?.isFinal()) {
+      return node;
     }
+  }
+}
+function traversePropOrCall(pathBuilder: PathBuilder, options: TmockOptions, callInfo?: CallInfo) {
+  const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
+  const sutNode = getNodeToReturnValue(sutMockTree, pathBuilder, callInfo);
+  if (sutNode) {
+    return sutNode.getValue();
+  }
+  const userMockTree = userMockTrees[pathBuilder.groupId];
+  const userNode = getNodeToReturnValue(userMockTree, pathBuilder, callInfo);
+  if (userNode) {
+    return userNode.getValue();
   }
 
   if (!options.automockEnabled) {
@@ -761,18 +812,22 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: ITmockOptions, ca
   return getSutProxy(pathBuilder, options);
 }
 
-function getSutProxy(pathBuilder: PathBuilder, options: ITmockOptions) {
+function getSutProxy(pathBuilder: PathBuilder, options: TmockOptions) {
+  const userMockTree: MockTree = userMockTrees[pathBuilder.groupId];
+  const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
   const path = pathBuilder.path;
   const sutProxy = new Proxy(defaultProxyTarget, {
     get(target, prop) {
       // Handle special properties.
       switch (prop) {
         case IS_A_MOCK_PROXY: return true;
-        case MOCK_PROXY_TRAVERSED_PATH: return path;
+        case MOCK_PROXY_PATHBUILDER: return pathBuilder;
         case MOCK_PROXY_NAME: return options.defaultMockName;
         case MOCK_PROXY_TO_OBJECT:
-          const treeAsObject = sutMockTree.toObject(pathBuilder.path, options.externalMock);
-          return treeAsObject.getValue();
+          return MockTree
+            .fromUserTreeAndSutTree(userMockTree, sutMockTree)
+            .toObject(pathBuilder.path, options.externalMock)
+            .getValue();
         case 'hasOwnProperty': return () => true;
         case Symbol.toPrimitive: return target as any; // Prevent from 'TypeError: Cannot convert object to primitive value'.
       }
@@ -797,8 +852,16 @@ function getSutProxy(pathBuilder: PathBuilder, options: ITmockOptions) {
           if (sutMockTree.getNode(path)) {
             sutMockTree.deleteSubtree(path);
             sutMockTree.setNode(path, new TreeNodeTemp(pathBuilder.pathToBeShown));
+            // Reset nested mocks.
+            userMockTree.forEachSubtreeNode(path, (node) => {
+              const nodeValue = node.getValue();
+              if (isMockProxy(nodeValue)) {
+                treset(nodeValue);
+              }
+            });
           }
-          totalCallLog = totalCallLog.filter((call) => !call.path.startsWith(path));
+          totalCallLog = totalCallLog
+            .filter((call) => call.groupId !== pathBuilder.groupId || !call.path.startsWith(path));
           return undefined;
         }
       }
@@ -861,7 +924,7 @@ export function tmock<T = any>(
 {
   const parsedArgs = parseTmockArgs(nameOrSetupOrOptionsArg, setupOrOptionsArg, optionsArg);
 
-  const options: ITmockOptions = {
+  const options: TmockOptions = {
     ...globalOptions,
     ...parsedArgs.options,
   };
@@ -869,9 +932,14 @@ export function tmock<T = any>(
     options.defaultMockName = parsedArgs.name;
   }
 
-  const path = `__ROOT${totalMocksCounter++}__`;
-  const pathBuilder = new PathBuilder(path, options.defaultMockName, options.simplifiedOutputEnabled);
-  sutMockTree.setNode(path, new TreeNodeTemp(options.defaultMockName));
+  const mockId = (totalMocksCounter++).toString();
+  const pathBuilder = new PathBuilder(mockId, options.defaultMockName, options.simplifiedOutputEnabled);
+  const userMockTree = new MockTree();
+  userMockTree.setNode('', new TreeNodeTemp(options.defaultMockName));
+  const sutMockTree = new MockTree();
+  sutMockTree.setNode('', new TreeNodeTemp(options.defaultMockName));
+  userMockTrees[mockId] = userMockTree;
+  sutMockTrees[mockId] = sutMockTree;
 
   const initCouples: InitCouple[] =
     parsedArgs.initializers?.filter(initializer => isArray(initializer) && initializer.length === 2) as InitCouple[] || [];
@@ -902,7 +970,7 @@ export function tstub<T = any>(initializer: InitObjectOrInitCouple<T> | InitObje
   }
   const initCouples: InitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as InitCouple[] | [];
   const stubFromInitializer = initializers.find(initializer => isObject(initializer));
-  const stupWrapper: IStubWrapper = {
+  const stupWrapper: StubWrapper = {
     stub: deepClone(stubFromInitializer) || {},
   }
 

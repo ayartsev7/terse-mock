@@ -34,6 +34,10 @@ The module mainly contains functions for creating and managing mocks/stubs and g
     <td>supplements mock or stub</td>
   </tr>
   <tr style="border-bottom-style:hidden">
+    <td style="color:DarkRed">treset</td>
+    <td>clears mock touches, mock calls and mock values set by sut</td>
+  </tr>
+  <tr style="border-bottom-style:hidden">
     <td style="color:DarkRed">tunmock</td>
     <td>removes mocks from data</td>
   </tr>
@@ -72,9 +76,11 @@ Unmocking is required to turn result into plain js type before checking expectat
 - [Automatic spies](#automatic-spies)
 - [Using external mocks](#using-external-mocks)
 - [Module mocks](#module-mocks)
+- [Resetting mocks](#resetting-mocks)
 - [And more](#and-more)
   - [Alternative way of setting mock values](#alternative-way-of-setting-mock-values)
   - [Import all at once](#import-all-at-once)
+  - [Nested mocks](#nested-mocks)
   - [Сall history display options](#call-history-display-options)
   - [Global module options](#global-module-options)
 
@@ -275,6 +281,38 @@ jest.mock('some-other-module', () => tmock('some-other-module', [{
   someFunction: () => 'some value',
 }]));
 ```
+## Resetting mocks
+Mock or any of its part can be reset by `treset`. That means that all mock touches, mock calls and mock values setup outside `tmock` and `tset` are cleared out from mock while values setup by `tmock` and `tset` persist. Calling `treset` with mock argument will also reset all nested mocks passed to `tmock` and `tset` as return values for this mock.
+```javascript
+test('reset mocks demo', () => {
+  // ARRANGE
+  const mock = tmock([
+    [m => m.p.pp, 'val'],
+  ]);
+
+  // Oparate mock in sut.
+  mock.p = {}; // Replace value.
+  mock.a.f().c = true; // Add new value.
+  mock.b; // Touch.
+  expect(tunmock(mock)).toEqual({ // Unmock to observe all mock values at once
+    p: {},
+    a: {
+      f: expect.any(Function),
+    },
+    b: 'mock.b',
+  });
+
+  // ACT
+  treset(mock);
+
+  // ASSERT
+  expect(tunmock(mock)).toEqual({
+    p: {
+      pp: 'val',
+    },
+  });
+});
+```
 ## And more
 Some of minor features are listed below. See project [tests](https://github.com/ayartsev7/terse-mock/tree/main/tests) for the rest of features and examples.
 ### Alternative way of setting mock values
@@ -311,6 +349,33 @@ one can write
 import tm from 'terse-mock';
 
 const mock = tm.mock([[m => m.f(tm.ANY), 1]]);
+```
+### Nested mocks
+terse-mock mocks can be freely used as mock return values of `tmock` and `tset`
+```javascript
+test('nested mocks demo', () => {
+  // ARRANGE
+  const mock = tmock([
+    [m => m.nestedMock, tmock([
+      [mm => mm.prop1, 1],
+      [mm => mm.prop2, 3],
+    ])],
+    [m => m.prop, 'val'],
+  ]);
+  mock.nestedMock.anotherProp = 5;
+
+  // ASSERT
+  expect(mock.nestedMock.prop1).toBe(1);
+  expect(mock.nestedMock.prop2).toBe(3);
+  expect(mock.nestedMock.anotherProp).toBe(5);
+  expect(tunmock(mock)).toEqual({
+    nestedMock: {
+      prop1: 1,
+      prop2: 3,
+      anotherProp: 5,
+    },
+    prop: 'val',
+  });
 ```
 ### Call history display options
 By default `tcalls` uses simplified output - it does not expose the contents of objects and arrays in called functions arguments. If you need to see the contents of objects and arrays, you can use the `simplifiedOutputEnabled` option, which can be set both globally and for a specific mock.

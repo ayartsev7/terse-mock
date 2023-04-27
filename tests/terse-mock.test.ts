@@ -1,5 +1,5 @@
 ﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tcalls, tglobalopt, IExternalMock, InitCouple, AnyInitializer,
-  ITmockOptions, tstub,
+  TmockOptions, tstub,
 } from '../src/terse-mock';
 
 const jestMock: IExternalMock = {
@@ -71,7 +71,7 @@ describe('-------------------- tglobalopt ----------------------', () => {
     const globalOptions = tglobalopt();
 
     // ASSERT
-    const expectedGlobalOpt: ITmockOptions = {
+    const expectedGlobalOpt: TmockOptions = {
       defaultMockName: 'mock',
       simplifiedOutputEnabled: true,
       automockEnabled: true,
@@ -91,7 +91,7 @@ describe('-------------------- tglobalopt ----------------------', () => {
     });
 
     // ASSERT
-    const expectedGlobalOpt: ITmockOptions = {
+    const expectedGlobalOpt: TmockOptions = {
       defaultMockName: 'mock name',
       simplifiedOutputEnabled: false,
       automockEnabled: true,
@@ -1094,37 +1094,86 @@ describe('------------------- treset --------------------', () => {
     expect(() => treset(mock)).not.toThrow();
   })
 
-  test('should erase mock return values', () => {
+  test('should restore mock return value overwritten in sut', () => {
     // ARRANGE
     const mock = tmock([
-      [m => m.a.b, 7],
+      [m => m.untouched, 'u'],
+      [m => m.replacedProp1, 'rp1'],
+      [m => m.replacedProp2.prop, 'rp2.prop'],
+      [m => m.replacedProp2.f(), 'rp2.f'],
+      [m => m.replacedFunc().prop, 'rf().prop'],
+      [m => m.replacedFunc(true), 'rf(true)'],
+      [m => m.replacedFunc.prop, 'rf.prop'],
     ]);
-    expect(mock.a.b).toBe(7);
+    mock.replacedProp1 = 1;
+    mock.replacedProp2 = 3;
+    mock.replacedFunc = 5;
+    expect(mock.untouched).toBe('u');
+    expect(mock.replacedProp1).toBe(1);
+    expect(mock.replacedProp2).toBe(3);
+    expect(mock.replacedProp2.prop).toBe(undefined);
+    expect(mock.replacedProp2.f).toBe(undefined);
+    expect(mock.replacedFunc).toBe(5);
+    expect(() => mock.replacedFunc()).toThrowError();
 
     // ACT
-    treset(mock.a);
+    treset(mock);
 
     // ASSERT
-    expect(mock.a.b).toBeDefined();
-    expect(mock.a.b).not.toBe(7);
+    expect(mock.untouched).toBe('u');
+    expect(mock.replacedProp1).toBe('rp1');
+    expect(mock.replacedProp2.prop).toBe('rp2.prop');
+    expect(mock.replacedProp2.f()).toBe('rp2.f');
+    expect(mock.replacedProp2.f()).toBe('rp2.f');
+    expect(mock.replacedFunc().prop).toBe('rf().prop');
+    expect(mock.replacedFunc(true)).toBe('rf(true)');
+    expect(mock.replacedFunc.prop).toBe('rf.prop');
   });
 
-  test('should erase mocks at any nesting levels and clear data from unmocked result', () => {
+  test('should erase return values added in sut', () => {
     // ARRANGE
-    const mock = tm.mock([{ aaa: 7 }]);
+    const mock = tmock([
+      [m => m.f(1), 1],
+    ]);
+    mock.a.b.c = 3;
+    mock.f(2).p = 5;
+    expect(mock.f(1)).toBe(1);
+    expect(mock.a.b.c).toBe(3);
+    expect(mock.f(2).p).toBe(5);
 
-    let res;
+    // ACT
+    treset(mock);
 
+    // ASSERT
+    expect(mock.f(1)).toBe(1);
+    expect(mock.a.b.c).not.toBe(3);
+    expect(mock.f(2).p).not.toBe(5);
+  });
+
+  test('should erase mocks at any nesting levels and clear mock touches from unmocked result', () => {
+    // ARRANGE
+    // Create mock.
+    const mock = tm.mock([{
+      untouched: 7,
+      replaced: true,
+    }]);
+
+    // Touch in sut.
     mock.a.e = 9;
     mock.a.aa.aaa;
     mock.a.aa1.aaa;
     mock.a.aa.aaa1;
     mock.b;
     mock.c.c;
+    mock.replaced = false;
+    mock.added = 'value';
 
-    res = tm.unmock(mock);
+    // ACT + ASSERT
+    let res = tm.unmock(mock);
     expect(res).toEqual({
-      aaa: 7,
+      untouched: 7,
+      replaced: false,
+      added: 'value',
       a: {
         aa: {
           aaa: 'mock.a.aa.aaa',
@@ -1144,7 +1193,9 @@ describe('------------------- treset --------------------', () => {
     tm.reset(mock.a.aa);
     res = tm.unmock(mock);
     expect(res).toEqual({
-      aaa: 7,
+      untouched: 7,
+      replaced: false,
+      added: 'value',
       a: {
         aa: 'mock.a.aa',
         aa1: {
@@ -1161,7 +1212,9 @@ describe('------------------- treset --------------------', () => {
     tm.reset(mock.a);
     res = tm.unmock(mock);
     expect(res).toEqual({
-      aaa: 7,
+      untouched: 7,
+      replaced: false,
+      added: 'value',
       a: 'mock.a',
       b: 'mock.b',
       c: {
@@ -1171,7 +1224,89 @@ describe('------------------- treset --------------------', () => {
 
     tm.reset(mock);
     res = tm.unmock(mock);
-    expect(res).toBe('mock'); // TODO: shouldn't it be { aaa: 7 } ?
+    expect(res).toEqual({
+      untouched: 7,
+      replaced: true,
+    });
+  });
+
+  test('should erase mocks first touched by sut then setup by tset', () => {
+    // ARRANGE
+    // Create mock.
+    const mock = tm.mock();
+
+    // Touch in sut.
+    mock.replaced1 = 'replaced1';
+    mock.replaced2.prop = 'replaced2.prop';
+
+    // Complement mock later
+    tset(mock, [
+      [m => m.replaced1, 'original1'],
+      [m => m.replaced2, 'original2'],
+    ])
+
+    // ACT + ASSERT
+    let res = tunmock(mock);
+    expect(res).toEqual({
+      replaced1: 'replaced1',
+      replaced2: 'original2',
+    });
+
+    treset(mock);
+    res = tm.unmock(mock);
+    expect(res).toEqual({
+      replaced1: 'original1',
+      replaced2: 'original2',
+    });
+  });
+
+  test('should erase return values per arguments added by sut', () => {
+    // ARRANGE
+    const mock = tm.mock([
+      [m => m.f(1), 1],
+    ]);
+
+    // Touch mock in sut.
+    mock.f().p = 3;
+
+    // Check result before reset.
+    let res = tunmock(mock);
+    expect(res.f(1)).toBe(1);
+    expect(res.f()).toEqual({ p: 3 });
+
+    // ACT
+    treset(mock);
+
+    // ASSERT
+    res = tunmock(mock);
+    expect(res.f(1)).toBe(1);
+    expect(res.f()).toBeUndefined();
+  });
+
+  test('should erase nested mocks', () => {
+    // ARRANGE
+    const mock = tmock([
+      [m => m.prop, tmock('nestedMock', [
+        [nested => nested.q, 1],
+      ])],
+    ]);
+
+    // Touch mock in sut.
+    mock.prop.q = 3;
+    mock.prop.qqq = 5;
+
+    // Check result before reset.
+    let res = tunmock(mock);
+    expect(res.prop.q).toBe(3);
+    expect(res.prop.qqq).toBe(5);
+
+    // ACT
+    treset(mock);
+
+    // ASSERT
+    res = tunmock(mock);
+    expect(res.prop.q).toBe(1);
+    expect(res.prop.qqq).toBeUndefined();
   });
 
   test('should erase mock calls', () => {
