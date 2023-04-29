@@ -316,7 +316,7 @@ test('reset mocks demo', () => {
 ## And more
 Some of minor features are listed below. See project [tests](https://github.com/ayartsev7/terse-mock/tree/main/tests) for the rest of features and examples.
 ### Alternative way of setting mock values
-Besides setup tuples there is another way of passing mock return values: initialization object. This option is well suited for [module mocks](#module-mocks)
+Besides setup tuples there is another way of passing mock return values: initialization object. This option is well suited for [module mocks](#module-mocks).
 ```javascript
 test('two ways of setting mock values', () => {
   // ARRANGE
@@ -351,7 +351,7 @@ import tm from 'terse-mock';
 const mock = tm.mock([[m => m.f(tm.ANY), 1]]);
 ```
 ### Nested mocks
-terse-mock mocks can be freely used as mock return values of `tmock` and `tset`
+terse-mock mocks can be freely used as mock return values of `tmock` and `tset`.
 ```javascript
 test('nested mocks demo', () => {
   // ARRANGE

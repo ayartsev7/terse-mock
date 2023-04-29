@@ -128,30 +128,38 @@ function deepClone(source: any) {
   // }
   return source;
 }
+function deepCloneAndSpyify(_source: any, _pathBuilder: PathBuilder, _externalMock?: IExternalMock, _thisArg = null) {
+  const visitedObjects: any[] = [];
+  return deepCloneAndSpyifyInternal(_source, _pathBuilder, _externalMock, _thisArg);
 
-function deepCloneAndSpyify(source: any, pathBuilder: PathBuilder, externalMock?: IExternalMock, thisArg = null) {
-  if (isMockProxy(source)) {
+  function deepCloneAndSpyifyInternal(source: any, pathBuilder: PathBuilder, externalMock: IExternalMock | undefined, thisArg) {
+    if (isMockProxy(source)) {
+      return source;
+    }
+    if (isObject(source)) {
+      if (visitedObjects.includes(source)) {
+        return source;
+      }
+      visitedObjects.push(source);
+      return shallowMergeFromTo(source, {}, (val, prop) => deepCloneAndSpyifyInternal(val, pathBuilder.withProp(prop), externalMock, source));
+    }
+    if (isArray(source)) {
+      return source.map((item, index) => deepCloneAndSpyifyInternal(item, pathBuilder.withProp(index), externalMock, source));
+    }
+    if (isFunction(source)) {
+      if (!isInstanceofObject(source)) {
+        // Special case for entities that has typeof === 'function' but that are not instanceof Object.
+        // jest.fn() instances fall here, we make this check to return jest.fn() instance as is,
+        // otherwise we may end up with problems like incorrect results of jest matchers or stack overflows.
+        return externalMock ? createSpy(pathBuilder, source, externalMock) : source;
+      }
+      const result = createSpy(pathBuilder, source.bind(thisArg), externalMock); // TODO: test this binding
+      shallowMergeFromTo(source, result, (val) => deepCloneAndSpyifyInternal(val, pathBuilder, externalMock, source));
+      return result;
+    }
+
     return source;
   }
-  if (isObject(source)) {
-    return shallowMergeFromTo(source, {}, (val, prop) => deepCloneAndSpyify(val, pathBuilder.withProp(prop), externalMock, source));
-  }
-  if (isArray(source)) {
-    return source.map((item, index) => deepCloneAndSpyify(item, pathBuilder.withProp(index), externalMock, source));
-  }
-  if (isFunction(source)) {
-    if (!isInstanceofObject(source)) {
-      // Special case for entities that has typeof === 'function' but that are not instanceof Object.
-      // jest.fn() instances fall here, we make this check to return jest.fn() instance as is,
-      // otherwise we may end up with problems like incorrect results of jest matchers or stack overflows.
-      return externalMock ? createSpy(pathBuilder, source, externalMock) : source;
-    }
-    const result = createSpy(pathBuilder, source.bind(thisArg), externalMock); // TODO: test this binding
-    shallowMergeFromTo(source, result, (val) => deepCloneAndSpyify(val, pathBuilder, externalMock, source));
-    return result;
-  }
-
-  return source;
 }
 
 function shallowMergeFromTo(from: Object, to: Object, mapper: PropMapperType = (val) => val, except: (string|symbol)[] = []) {
@@ -554,24 +562,35 @@ const userMockTrees: MockTree[] = [];
 let sutMockTrees: MockTree[] = [];
 
 // This function removes all tm proxies from data.
-export function tunmock(data) {
-  if (!isInstanceofObject(data)) {
-    return data;
+export function tunmock(_data) {
+  const visitedObjects: any[] = [];
+  return tunmockInternal(_data);
+
+  function tunmockInternal(data) {
+    if (!isInstanceofObject(data)) {
+      return data;
+    }
+    if (isObjectOrClass(data)) {
+      if (visitedObjects.includes(data)) {
+        return data;
+      }
+      visitedObjects.push(data);
+    }
+    if (isMockProxy(data)) {
+      return tunmockInternal(data[MOCK_PROXY_TO_OBJECT]);
+    }
+    if (isArray(data)) {
+      return data.map((item) => tunmockInternal(item))
+    }
+    if (isSpy(data)) {
+      const originalFunction = data[ORIGINAL_FUNCTION];
+      shallowMergeFromTo(data, originalFunction, (val) => val, [IS_A_SPY, ORIGINAL_FUNCTION]);
+      return originalFunction;
+    }
+    const result = isFunction(data) ? data : {};
+    shallowMergeFromTo(data, result, (val) => tunmockInternal(val));
+    return result;
   }
-  if (isMockProxy(data)) {
-    return tunmock(data[MOCK_PROXY_TO_OBJECT]);
-  }
-  if (isArray(data)) {
-    return data.map((item) => tunmock(item))
-  }
-  if (isSpy(data)) {
-    const originalFunction = data[ORIGINAL_FUNCTION];
-    shallowMergeFromTo(data, originalFunction, (val) => val, [IS_A_SPY, ORIGINAL_FUNCTION]);
-    return originalFunction;
-  }
-  const result = isFunction(data) ? data : {};
-  shallowMergeFromTo(data, result, (val) => tunmock(val));
-  return result;
 }
 
 export function tinfo(data: any): MockInfo {

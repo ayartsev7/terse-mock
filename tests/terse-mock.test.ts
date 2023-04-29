@@ -835,6 +835,25 @@ describe('-------------------- tunmock ---------------------', () => {
       a: 'mock',
     });
   });
+
+  test('should not end up with stack overflow unmocking cyclic object values', () => {
+    // ARRANGE
+    const parent = {
+      prop: tmock('parent_prop'),
+      child: {},
+    }
+    const child = {
+      prop: tmock('child_prop'),
+      parent: parent,
+    }
+    parent.child = child;
+
+    // ACT + ASSERT
+    expect(() => tunmock(child)).not.toThrowError();
+    const res = tunmock(child);
+    expect(res.prop).toBe('child_prop');
+    expect(res.parent.prop).toBe('parent_prop');
+  });
 });
 
 describe('-------------------- tset ---------------------', () => {
@@ -1082,6 +1101,25 @@ describe('-------------------- tset ---------------------', () => {
     expect(mock.f(-Infinity)).toBe('f(-Infinity)');
     expect(mock.f(Symbol())).toBe('f(Symbol())');
     expect(mock.f(Symbol(1))).toBe('f(Symbol(1))');
+  });
+
+  test('should not end up with stack overflow setting cyclic object values', () => {
+    const parent = {
+      child: {},
+    };
+    const child = {
+      parent: parent,
+      self: {},
+      f: function () {},
+    }
+    child.self = child;
+    (child.f as any).parent = child;
+    parent.child = child;
+
+    const mock = tmock();
+
+    // ACT + ASSERT
+    expect(() => tset(mock, [(m) => m.prop, child])).not.toThrowError();
   });
 });
 
