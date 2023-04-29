@@ -1,6 +1,6 @@
 {
   "name": "terse-mock",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Easy mock creation and automocking",
   "main": "build/terse-mock.js",
   "files": [
