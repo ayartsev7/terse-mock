@@ -19,6 +19,26 @@ function getOrAddObjPropVal(obj: any, prop: ObjectPropertyType, val: any = {}) {
   return obj[prop];
 }
 
+function functionToString(data: any): string {
+//    if (simplify) { // Uncomment this 'if' to get full function text if not simplified.
+  const found = String(data).match(/(\S*)\s*\(/);
+  if (!found || found[1] === 'function') {
+    return 'function';
+  }
+  const name = found[1];
+  let text = 'arrow function';
+  if (name) {
+    if (globalOptions.exposeFunctionNames) {
+      text = 'function ' + name;
+    } else {
+      text = 'function';
+    }
+  }
+  return text;
+//    }
+//    return String(data);
+}
+
 function toString(data: any, simplify: boolean = false) {
   if (isArray(data)) {
     if (data.length === 0) {
@@ -44,15 +64,7 @@ function toString(data: any, simplify: boolean = false) {
       }
       return toString(unmocked);
     }
-//    if (simplify) { // Uncomment this 'if' to get full function text if not simplified.
-    const found = String(data).match(/(\S*)\s*\(/);
-    if (!found || found[1] === 'function') {
-      return 'function';
-    }
-    const name = found[1];
-    return name ? ('function ' + name) : 'arrow function';
-//    }
-//    return String(data);
+    return functionToString(data);
   }
   if (isString(data)) {
     return globalOptions.quoteSymbol + data + globalOptions.quoteSymbol;
@@ -225,13 +237,22 @@ type MockFunctionContext = {
   argsToReturnValues: { [key: string]: any };
 }
 
-export type TmockOptions = {
-  automockEnabled: boolean;
-  simplifiedOutputEnabled: boolean;
+type TmockBaseOptions = {
+  automock: boolean;
+  simplifiedOutput: boolean;
+  externalMock?: IExternalMock;
+  exposeFunctionNames: boolean;
+}
+
+export type TmockOptions = Partial<TmockBaseOptions>;
+
+export type TmockGlobalOptions = TmockBaseOptions & {
   defaultMockName: string;
   quoteSymbol: string;
-  externalMock?: IExternalMock;
+  autoValuesPrefix: string;
 }
+
+type TmockFullOptions = TmockGlobalOptions & TmockOptions;
 
 export type MockInfo = {
   externalMock: any;
@@ -537,7 +558,11 @@ class MockTree {
   toObject(path: string, externalMock?: IExternalMock): Undefinable {
     const node = this.tree[path];
     if (node.hasValue()) {
-      return new Undefinable(node.getValue());
+      let value = node.getValue();
+      if (node.isTemp()) {
+        value = globalOptions.autoValuesPrefix + value;
+      }
+      return new Undefinable(value);
     }
 
     const collectValuesFromChildren = (res: Object, propsOrArgsToChildPaths: StringDictionary) =>
@@ -653,14 +678,16 @@ export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProx
   }
 }
 
-let globalOptions: TmockOptions = {
-  automockEnabled: true,
-  simplifiedOutputEnabled: true,
+let globalOptions: TmockGlobalOptions = {
+  automock: true,
+  simplifiedOutput: true,
   defaultMockName: 'mock',
   quoteSymbol: '\'',
+  exposeFunctionNames: false,
+  autoValuesPrefix: '',
 };
 
-export function tglobalopt(options?: Partial<TmockOptions>): TmockOptions {
+export function tglobalopt(options?: Partial<TmockGlobalOptions>): TmockGlobalOptions {
   if (!options) {
     return globalOptions;
   }
@@ -673,7 +700,6 @@ export type InitCouple<T = any> = [(mockProxy: T) => any, any];
 export type InitObject = {[index: string]: unknown};
 type InitObjectOrInitCouple<T> = (T extends {} ? Partial<T> : InitCouple<T>) | InitCouple<T>;
 export type AnyInitializer = InitObject | InitCouple;
-type PartialOptions = Partial<TmockOptions>;
 
 function getStubInitializationProxy(proxyContext: StubInitializationProxyContext) {
   const initializationProxy = new Proxy(defaultProxyTarget, {
@@ -759,7 +785,7 @@ function getMockInitializationProxy(proxyContext: MockInitializationProxyContext
   }
 }
 
-function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder, options: TmockOptions) {
+function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder, options: TmockGlobalOptions) {
   const userMockTree = userMockTrees[pathBuilder.groupId];
   initCouples.forEach(initCouple => {
     const proxyContext: MockInitializationProxyContext = {
@@ -806,7 +832,7 @@ function getNodeToReturnValue(tree: MockTree, pathBuilder: PathBuilder, callInfo
     }
   }
 }
-function traversePropOrCall(pathBuilder: PathBuilder, options: TmockOptions, callInfo?: CallInfo) {
+function traversePropOrCall(pathBuilder: PathBuilder, options: TmockGlobalOptions, callInfo?: CallInfo) {
   const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
   const sutNode = getNodeToReturnValue(sutMockTree, pathBuilder, callInfo);
   if (sutNode) {
@@ -818,7 +844,7 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: TmockOptions, cal
     return userNode.getValue();
   }
 
-  if (!options.automockEnabled) {
+  if (!options.automock) {
     // Stop proxing if automock is false and propertry has not been explicitly mocked.
     return undefined;
   }
@@ -831,7 +857,7 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: TmockOptions, cal
   return getSutProxy(pathBuilder, options);
 }
 
-function getSutProxy(pathBuilder: PathBuilder, options: TmockOptions) {
+function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
   const userMockTree: MockTree = userMockTrees[pathBuilder.groupId];
   const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
   const path = pathBuilder.path;
@@ -892,13 +918,13 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockOptions) {
   return sutProxy;
 }
 
-function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitializer[] | PartialOptions,
-  initOrOptionsArg?: InitCouple | AnyInitializer[] | PartialOptions,
-  optionsArg?: PartialOptions)
+function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitializer[] | TmockOptions,
+  initOrOptionsArg?: InitCouple | AnyInitializer[] | TmockOptions,
+  optionsArg?: TmockOptions)
 {
   let name: string | undefined;
   let initializers: AnyInitializer[] | undefined;
-  let options: PartialOptions | undefined;
+  let options: TmockOptions | undefined;
   const multipleOptionsArgsErrorMessage = 'tmock: multiple options arguments not allowed';
   if (nameOrInitOrOptionsArg) {
     if (isString(nameOrInitOrOptionsArg)) {
@@ -906,7 +932,7 @@ function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitia
     } else if (isArray(nameOrInitOrOptionsArg)) {
       initializers = getInitializers(nameOrInitOrOptionsArg);
     } else {
-      options = nameOrInitOrOptionsArg as PartialOptions;
+      options = nameOrInitOrOptionsArg as TmockOptions;
     }
   }
   if (initOrOptionsArg) {
@@ -919,7 +945,7 @@ function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitia
       if (options) {
         throw new Error(multipleOptionsArgsErrorMessage);
       }
-      options = initOrOptionsArg as PartialOptions;
+      options = initOrOptionsArg as TmockOptions;
     }
   }
   if (optionsArg) {
@@ -937,13 +963,13 @@ function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitia
 }
 
 export function tmock<T = any>(
-  nameOrSetupOrOptionsArg?: string | InitObjectOrInitCouple<T>[] | PartialOptions,
-  setupOrOptionsArg?: InitObjectOrInitCouple<T>[] | PartialOptions,
-  optionsArg?: PartialOptions)
+  nameOrSetupOrOptionsArg?: string | InitObjectOrInitCouple<T>[] | TmockOptions,
+  setupOrOptionsArg?: InitObjectOrInitCouple<T>[] | TmockOptions,
+  optionsArg?: TmockOptions)
 {
   const parsedArgs = parseTmockArgs(nameOrSetupOrOptionsArg, setupOrOptionsArg, optionsArg);
 
-  const options: TmockOptions = {
+  const options: TmockFullOptions = {
     ...globalOptions,
     ...parsedArgs.options,
   };
@@ -952,7 +978,7 @@ export function tmock<T = any>(
   }
 
   const mockId = (totalMocksCounter++).toString();
-  const pathBuilder = new PathBuilder(mockId, options.defaultMockName, options.simplifiedOutputEnabled);
+  const pathBuilder = new PathBuilder(mockId, options.defaultMockName, options.simplifiedOutput);
   const userMockTree = new MockTree();
   userMockTree.setNode('', new TreeNodeTemp(options.defaultMockName));
   const sutMockTree = new MockTree();
