@@ -532,7 +532,11 @@ class MockTree {
     parentNode.linkChildViaProp(childNodePathBuilder);
   }
 
-  deleteSubtree(path: string) {
+  deleteSubtree(path?: string) {
+    if (!path) {
+      this.tree = {};
+      return;
+    }
     for (const key in this.tree) {
       if (key.length > path.length && (key.startsWith(path + '.') || key.startsWith(path + '('))) {
         // By construction: if node index starts with path. or path( then the node is in subtree of node with index = path.
@@ -584,7 +588,7 @@ let totalCallLog: PathBuilder[] = [];
 let totalMocksCounter = 0;
 
 const userMockTrees: MockTree[] = [];
-let sutMockTrees: MockTree[] = [];
+const sutMockTrees: MockTree[] = [];
 
 // This function removes all tm proxies from data.
 export function tunmock(_data) {
@@ -632,7 +636,7 @@ export function treset(mock?: any) { // TODO: this function should not reset dat
     mock(RESET_MOCK_PROXY);
     return;
   }
-  sutMockTrees = [];
+  sutMockTrees.forEach((mockTree) => mockTree.deleteSubtree());
   totalCallLog = [];
 }
 

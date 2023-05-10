@@ -1463,6 +1463,32 @@ describe('------------------- treset --------------------', () => {
     expect(tcalls(mock1)).toEqual([]);
     expect(tcalls(mock2)).toEqual([]);
   });
+
+  test('should erase touches of all mocks when argument is not provided', () => {
+    // ARRANGE
+    const mock1 = tmock([{
+      a: 1,
+    }]);
+    mock1.a = 3;
+    const mock2 = tmock();
+    mock2.b = 1;
+
+    // ACT
+    treset();
+    mock1.aaa;
+    mock2.bbb;
+
+    // ASSERT
+    const res1 = tunmock(mock1);
+    const res2 = tunmock(mock2);
+    expect(res1).toEqual({
+      a: 1,
+      aaa: 'mock.aaa',
+    });
+    expect(res2).toEqual({
+      bbb: 'mock.bbb',
+    });
+  });
 });
 
 describe('-------------------- tcalls -------------------', () => {
