@@ -1,5 +1,4 @@
 const MOCK_PROXY_PATHBUILDER = Symbol('MOCK_PROXY_PATHBUILDER');
-const MOCK_PROXY_NAME = Symbol('MOCK_PROXY_NAME');
 const MOCK_PROXY_TO_OBJECT = Symbol('MOCK_PROXY_TO_OBJECT');
 const RESET_MOCK_PROXY = Symbol('RESET_MOCK_PROXY');
 const SET_MOCK_PROXY_RETURN_VALUES = Symbol('SET_MOCK_PROXY_RETURN_VALUES');
@@ -39,6 +38,21 @@ function functionToString(data: any): string {
 //    return String(data);
 }
 
+function mockProxyToString(data: any, simplify: boolean) {
+  let result;
+  if (simplify) {
+    result = (data[MOCK_PROXY_PATHBUILDER] as PathBuilder).pathToBeShown;
+  } else {
+    const unmocked = tunmock(data);
+    if (isString(unmocked)) {
+      result = unmocked;
+    } else {
+      result = toString(unmocked);
+    }
+  }
+  return result || '<mock>';
+}
+
 function toString(data: any, simplify: boolean = false) {
   if (isArray(data)) {
     if (data.length === 0) {
@@ -55,14 +69,7 @@ function toString(data: any, simplify: boolean = false) {
   }
   if (isFunction(data)) {
     if (isMockProxy(data)) {
-      const unmocked = tunmock(data);
-      if (isString(unmocked)) {
-        return unmocked;
-      }
-      if (simplify) {
-        return data[MOCK_PROXY_NAME];
-      }
-      return toString(unmocked);
+      return mockProxyToString(data, simplify);
     }
     return functionToString(data);
   }
@@ -562,11 +569,7 @@ class MockTree {
   toObject(path: string, options: TmockFullOptions): Undefinable {
     const node = this.tree[path];
     if (node.hasValue()) {
-      let value = node.getValue();
-      if (node.isTemp()) {
-        value = options.autoValuesPrefix + value;
-      }
-      return new Undefinable(value);
+      return new Undefinable(node.getValue());
     }
 
     const collectValuesFromChildren = (res: Object, propsOrArgsToChildPaths: StringDictionary) =>
@@ -874,7 +877,6 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
       switch (prop) {
         case IS_A_MOCK_PROXY: return true;
         case MOCK_PROXY_PATHBUILDER: return pathBuilder;
-        case MOCK_PROXY_NAME: return options.defaultMockName;
         case MOCK_PROXY_TO_OBJECT:
           return MockTree
             .fromUserTreeAndSutTree(userMockTree, sutMockTree)
@@ -985,7 +987,7 @@ export function tmock<T = any>(
   }
 
   const mockId = (totalMocksCounter++).toString();
-  const pathBuilder = new PathBuilder(mockId, options.defaultMockName, options.simplifiedOutput);
+  const pathBuilder = new PathBuilder(mockId, options.autoValuesPrefix + options.defaultMockName, options.simplifiedOutput);
   const userMockTree = new MockTree();
   userMockTree.setNode('', new TreeNodeTemp(options.defaultMockName));
   const sutMockTree = new MockTree();

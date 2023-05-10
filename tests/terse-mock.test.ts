@@ -333,16 +333,17 @@ describe('----------------------- tmock options ------------------------', () =>
     test('should simplify nested mocks', () => {
       // ARRANGE
       const innerMock = tm.mock('innerMock', [{ a: 7 }]);
+      const innerMockWithEmptyName = tm.mock('');
       const mock = tm.mock({ simplifiedOutput: false });
       const mockSimplifiedOutput = tm.mock({ simplifiedOutput: true });
 
       // ACT
-      const res = mock(innerMock);
-      const resSimple = mockSimplifiedOutput(innerMock);
+      const res = mock(innerMock, innerMockWithEmptyName);
+      const resSimple = mockSimplifiedOutput(innerMock, innerMockWithEmptyName);
 
       // ASSERT
-      expect(tm.unmock(res)).toEqual('mock({a: 7})');
-      expect(tm.unmock(resSimple)).toEqual('mock(innerMock)');
+      expect(tm.unmock(res)).toEqual('mock({a: 7}, <mock>)');
+      expect(tm.unmock(resSimple)).toEqual('mock(innerMock, <mock>)');
     });
   });
 
