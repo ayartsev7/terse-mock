@@ -354,6 +354,17 @@ describe('----------------------- tmock options ------------------------', () =>
       expect(mock.a).toBeUndefined();
     });
   });
+
+  test('should add prefix to auto mocked values', () => {
+    // ARRANGE
+    const mock = tmock({ autoValuesPrefix: 'value from ' });
+
+    // ACT
+    const result = tunmock(mock());
+
+    // ASSERT
+    expect(result).toBe('value from mock()');
+  });
 });
 
 describe('-------------------- mock behavior ----------------------', () => {
@@ -1563,6 +1574,18 @@ describe('----------------- tinfo ------------------', () => {
     const res = tm.unmock(mock);
     expect(tinfo(res.f).externalMock).toBeUndefined();
   });
+
+  test('should accept mock as argument', () => {
+    // ARRANGE
+    const mock = tmock({ externalMock: jestMock });
+
+    // ACT
+    mock.f();
+
+    // ASSERT
+    expect(tinfo(mock.f).externalMock).toBeCalledTimes(1);
+  });
+
 });
 
 describe ('---------------- test with js -----------------', () => {

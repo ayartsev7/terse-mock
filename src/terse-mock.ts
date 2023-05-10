@@ -242,6 +242,7 @@ type TmockBaseOptions = {
   simplifiedOutput: boolean;
   externalMock?: IExternalMock;
   exposeFunctionNames: boolean;
+  autoValuesPrefix: string;
 }
 
 export type TmockOptions = Partial<TmockBaseOptions>;
@@ -249,7 +250,6 @@ export type TmockOptions = Partial<TmockBaseOptions>;
 export type TmockGlobalOptions = TmockBaseOptions & {
   defaultMockName: string;
   quoteSymbol: string;
-  autoValuesPrefix: string;
 }
 
 type TmockFullOptions = TmockGlobalOptions & TmockOptions;
@@ -555,22 +555,22 @@ class MockTree {
   }
 
   // Convert tree to hierarchy of objects and functions based on node paths and node values.
-  toObject(path: string, externalMock?: IExternalMock): Undefinable {
+  toObject(path: string, options: TmockFullOptions): Undefinable {
     const node = this.tree[path];
     if (node.hasValue()) {
       let value = node.getValue();
       if (node.isTemp()) {
-        value = globalOptions.autoValuesPrefix + value;
+        value = options.autoValuesPrefix + value;
       }
       return new Undefinable(value);
     }
 
     const collectValuesFromChildren = (res: Object, propsOrArgsToChildPaths: StringDictionary) =>
-      shallowMergeFromTo(propsOrArgsToChildPaths, res, (val) => this.toObject(val, externalMock).getValue());
+      shallowMergeFromTo(propsOrArgsToChildPaths, res, (val) => this.toObject(val, options).getValue());
 
     let result = {};
     if (node.hasBeenCalled()) { // node represents something collable.
-      result = node.toMockFunction(externalMock);
+      result = node.toMockFunction(options.externalMock);
       collectValuesFromChildren(result[ARGS_TO_RETURN_VALUES], node.getArgsToChildPaths());
     }
     collectValuesFromChildren(result, node.getPropsToChildPaths());
@@ -619,6 +619,9 @@ export function tunmock(_data) {
 }
 
 export function tinfo(data: any): MockInfo {
+  if (isMockProxy(data)) {
+    data = tunmock(data);
+  }
   return {
     externalMock: data[EXTERNAL_MOCK],
   };
@@ -871,7 +874,7 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
         case MOCK_PROXY_TO_OBJECT:
           return MockTree
             .fromUserTreeAndSutTree(userMockTree, sutMockTree)
-            .toObject(pathBuilder.path, options.externalMock)
+            .toObject(pathBuilder.path, options)
             .getValue();
         case 'hasOwnProperty': return () => true;
         case Symbol.toPrimitive: return target as any; // Prevent from 'TypeError: Cannot convert object to primitive value'.
