@@ -112,11 +112,11 @@ describe('-------------------- tglobalopt ----------------------', () => {
   });
 
   test.each([
-    [ false, function f() {}, 'mock(function)'],
-    [ false, new Function(), 'mock(function)'],
-    [ true, function f() {}, 'mock(function f)'],
-    [ true, new Function(), 'mock(function anonymous)'],
-  ])('should output function names when exposeFunctionNames is set to true', (exposeFunctionNames, func, expectedUnmocked) => {
+    [ false, function f() {}, 'mock(<function>)'],
+    [ false, new Function(), 'mock(<function>)'],
+    [ true, function f() {}, 'mock(<function f>)'],
+    [ true, new Function(), 'mock(<function anonymous>)'],
+  ])('should output function names when exposeFunctionNames is set to true %#', (exposeFunctionNames, func, expectedUnmocked) => {
     // ARRANGE
     tglobalopt({ exposeFunctionNames: exposeFunctionNames });
     const mock = tmock();
@@ -158,6 +158,15 @@ describe('----------------------- tmock arguments ------------------------', () 
 
     // ASSERT
     expect(tunmock(mock)).toBe('mockName');
+  });
+
+  test('should treat empty string as name', () => {
+    // ACT
+    const mock = tmock('');
+    mock.a;
+
+    // ASSERT
+    expect(tunmock(mock)).toEqual({ a: 'a' });
   });
 
   test('should accept init tuple as first or second argument', () => {
@@ -720,10 +729,10 @@ describe('-------------------- tunmock ---------------------', () => {
   });
 
   test.each([
-    [new Function(), 'mock(function)'],
-    [() => undefined, 'mock(arrow function)'],
-    [function () { return null; }, 'mock(function)'],
-    [function f() { return null; }, 'mock(function)'],
+    [new Function(), 'mock(<function>)'],
+    [() => undefined, 'mock(<arrow function>)'],
+    [function () { return null; }, 'mock(<function>)'],
+    [function f() { return null; }, 'mock(<function>)'],
   ])('should unmock functions passed to mock functions as arguments %#', (functionPasseToMock, expectedResult) => {
     // ARRANGE
     const mock = tmock();
@@ -1412,7 +1421,7 @@ describe('------------------- treset --------------------', () => {
       'mock1.f()',
       'mock2.f()',
       'mock1.prop.f()',
-      'mock2(function, [1], {0: 1})',
+      'mock2(<function>, [1], {0: 1})',
       'mock1.prop.f(Infinity)',
       'mock1.prop.f(Infinity).prop.f2([])',
     ]);
@@ -1425,7 +1434,7 @@ describe('------------------- treset --------------------', () => {
     ]);
     expect(tcalls(mock2)).toEqual([
       'mock2.f()',
-      'mock2(function, [1], {0: 1})',
+      'mock2(<function>, [1], {0: 1})',
     ]);
 
     // Reset mock1.prop.f(Infinity).
@@ -1434,7 +1443,7 @@ describe('------------------- treset --------------------', () => {
       'mock1.f()',
       'mock2.f()',
       'mock1.prop.f()',
-      'mock2(function, [1], {0: 1})',
+      'mock2(<function>, [1], {0: 1})',
     ]);
     expect(tcalls(mock1)).toEqual([
       'mock1.f()',
@@ -1442,7 +1451,7 @@ describe('------------------- treset --------------------', () => {
     ]);
     expect(tcalls(mock2)).toEqual([
       'mock2.f()',
-      'mock2(function, [1], {0: 1})',
+      'mock2(<function>, [1], {0: 1})',
     ]);
 
     // Reset mock2.

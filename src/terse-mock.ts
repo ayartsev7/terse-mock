@@ -23,15 +23,15 @@ function functionToString(data: any): string {
 //    if (simplify) { // Uncomment this 'if' to get full function text if not simplified.
   const found = String(data).match(/(\S*)\s*\(/);
   if (!found || found[1] === 'function') {
-    return 'function';
+    return '<function>';
   }
   const name = found[1];
-  let text = 'arrow function';
+  let text = '<arrow function>';
   if (name) {
     if (globalOptions.exposeFunctionNames) {
-      text = 'function ' + name;
+      text = '<function ' + name + '>';
     } else {
-      text = 'function';
+      text = '<function>';
     }
   }
   return text;
@@ -933,7 +933,7 @@ function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitia
   let initializers: AnyInitializer[] | undefined;
   let options: TmockOptions | undefined;
   const multipleOptionsArgsErrorMessage = 'tmock: multiple options arguments not allowed';
-  if (nameOrInitOrOptionsArg) {
+  if (nameOrInitOrOptionsArg !== undefined) {
     if (isString(nameOrInitOrOptionsArg)) {
       name = nameOrInitOrOptionsArg as string;
     } else if (isArray(nameOrInitOrOptionsArg)) {
@@ -980,7 +980,7 @@ export function tmock<T = any>(
     ...globalOptions,
     ...parsedArgs.options,
   };
-  if (parsedArgs.name) {
+  if (parsedArgs.name !== undefined) {
     options.defaultMockName = parsedArgs.name;
   }
 
