@@ -79,6 +79,7 @@ describe('-------------------- tglobalopt ----------------------', () => {
     // ASSERT
     const expectedGlobalOpt: TmockGlobalOptions = {
       defaultMockName: 'mock',
+      simplificationThreshold: 40,
       simplifiedOutput: true,
       automock: true,
       quoteSymbol: '\'',
@@ -92,6 +93,7 @@ describe('-------------------- tglobalopt ----------------------', () => {
     // ACT
     const globalOptions = tglobalopt({
       defaultMockName: 'mock name',
+      simplificationThreshold: 1,
       simplifiedOutput: false,
       // do not pass automockEnabled
       quoteSymbol: '"',
@@ -102,6 +104,7 @@ describe('-------------------- tglobalopt ----------------------', () => {
     // ASSERT
     const expectedGlobalOpt: TmockGlobalOptions = {
       defaultMockName: 'mock name',
+      simplificationThreshold: 1,
       simplifiedOutput: false,
       automock: true,
       quoteSymbol: '"',
@@ -137,12 +140,20 @@ describe('-------------------- tglobalopt ----------------------', () => {
     const res = {
       a: mock.a,
       b: mock.f(mock.g()).a,
+      c: mock.f(tmock('')),
+      d: mock.f(tmock('').a),
+      e: tmock(),
+      f: tmock(''),
     }
 
     // ASSERT
     expect(tunmock(res)).toEqual({
       a: 'value from mock.a',
-      b: 'value from mock.f(value from mock.g()).a',
+      b: 'value from mock.f(mock.g()).a',
+      c: 'value from mock.f(<unnamed mock>)',
+      d: 'value from mock.f(a)',
+      e: 'value from mock',
+      f: 'value from <unnamed mock>',
     });
   });
 });
@@ -307,7 +318,7 @@ describe('----------------------- tmock options ------------------------', () =>
     });
   });
 
-  describe('simplifiedOutput', () => {
+  describe('simplifiedOutput and simplificationThreshold', () => {
     test.each([
       [1, 'mock(1)', 'mock(1)'],
       [{}, 'mock({})', 'mock({})'],
@@ -330,20 +341,26 @@ describe('----------------------- tmock options ------------------------', () =>
       expect(tm.unmock(resSimple)).toEqual(expectedResultSimplified);
     });
 
-    test('should simplify nested mocks', () => {
+    test('should simplify arguments-mocks when stringified mock length exceeds simplification threshold when threshold is zero', () => {
       // ARRANGE
-      const innerMock = tm.mock('innerMock', [{ a: 7 }]);
-      const innerMockWithEmptyName = tm.mock('');
-      const mock = tm.mock({ simplifiedOutput: false });
-      const mockSimplifiedOutput = tm.mock({ simplifiedOutput: true });
+      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 0 });
+      const mock = tmock();
+      const mockNameLength0 = tmock('');
+      const mockNameLength1 = tmock('m');
 
-      // ACT
-      const res = mock(innerMock, innerMockWithEmptyName);
-      const resSimple = mockSimplifiedOutput(innerMock, innerMockWithEmptyName);
+      // ACT + ASSERT
+      expect(tunmock(mock(mockNameLength0))).toBe('mock(<unnamed mock>)');
+      expect(tunmock(mock(mockNameLength1))).toBe('mock(<...>)');
+    });
 
-      // ASSERT
-      expect(tm.unmock(res)).toEqual('mock({a: 7}, <mock>)');
-      expect(tm.unmock(resSimple)).toEqual('mock(innerMock, <mock>)');
+    test('should simplify arguments-mocks when stringified mock length exceeds simplification threshold when threshold is positive', () => {
+      // ARRANGE
+      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 10 });
+      const mock = tmock();
+
+      // ACT + ASSERT
+      expect(tunmock(mock(mock.fff()))).toBe('mock(mock.fff())');
+      expect(tunmock(mock(mock.ffff()))).toBe('mock(<...>)');
     });
   });
 

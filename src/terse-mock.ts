@@ -39,18 +39,15 @@ function functionToString(data: any): string {
 }
 
 function mockProxyToString(data: any, simplify: boolean) {
-  let result;
+  const pathBuilder = data[MOCK_PROXY_PATHBUILDER] as PathBuilder;
+  let result = pathBuilder.pathToBeShown;
   if (simplify) {
-    result = (data[MOCK_PROXY_PATHBUILDER] as PathBuilder).pathToBeShown;
-  } else {
-    const unmocked = tunmock(data);
-    if (isString(unmocked)) {
-      result = unmocked;
-    } else {
-      result = toString(unmocked);
+    const options = pathBuilder.options;
+    if (options.simplificationThreshold !== undefined && result.length > options.simplificationThreshold) {
+      result = '<...>';
     }
   }
-  return result || '<mock>';
+  return result || '<unnamed mock>';
 }
 
 function toString(data: any, simplify: boolean = false) {
@@ -255,6 +252,7 @@ type TmockBaseOptions = {
 export type TmockOptions = Partial<TmockBaseOptions>;
 
 export type TmockGlobalOptions = TmockBaseOptions & {
+  simplificationThreshold: number;
   defaultMockName: string;
   quoteSymbol: string;
 }
@@ -330,22 +328,22 @@ class PathBuilder {
   private path_: string  = '';
   private latestPathChunk_: ObjectPropertyType  = '';
   private pathToBeShown_ = '';
-  private simplifiedOutputEnabled_: boolean;
+  private options_: Partial<TmockFullOptions>;
 
-  constructor(groupId: string, pathToBeShown: string, simplifiedOutputEnabled: boolean = false) {
+  constructor(groupId: string, pathToBeShown: string, options: Partial<TmockFullOptions> = {}) {
     this.groupId_ = groupId;
     this.path_ = '';
     this.pathToBeShown_ = pathToBeShown;
-    this.simplifiedOutputEnabled_ = simplifiedOutputEnabled;
+    this.options_ = options;
   }
 
   public withCall(args: any[]): PathBuilder {
     const latestPathChunk = argsToString(args);
-    const pathToBeShownChunk = !this.simplifiedOutputEnabled_ ? latestPathChunk : argsToString(args, true);
+    const pathToBeShownChunk = !this.options_.simplifiedOutput ? latestPathChunk : argsToString(args, true);
     const newPathBuilder = new PathBuilder(
       this.groupId_,
       this.pathToBeShown_ + pathToBeShownChunk,
-      this.simplifiedOutputEnabled_);
+      this.options_);
     newPathBuilder.path_ = this.path_ + latestPathChunk;
     newPathBuilder.latestPathChunk_ = latestPathChunk;
     newPathBuilder.parentPathBuilder_ = this;
@@ -358,7 +356,7 @@ class PathBuilder {
     const newPathBuilder = new PathBuilder(
       this.groupId_,
       this.pathToBeShown_ ? this.pathToBeShown_ + latestPathChunkWithSeparators : latestPathChunkStringified,
-      this.simplifiedOutputEnabled_);
+      this.options_);
     newPathBuilder.path_ = this.path_ + latestPathChunkWithSeparators,
     newPathBuilder.latestPathChunk_ = prop;
     newPathBuilder.parentPathBuilder_ = this;
@@ -384,6 +382,10 @@ class PathBuilder {
   get parentPathBuilder() {
     return this.parentPathBuilder_;
   }
+
+  get options() {
+    return this.options_;
+  }
 }
 
 class MockTreeNode {
@@ -404,10 +406,10 @@ class MockTreeNode {
     const node = new MockTreeNode();
     node.propsToChildPaths_ = { ...userNode.propsToChildPaths_, ...sutNode.propsToChildPaths_ };
     node.argsToChildPaths_ = { ...userNode.argsToChildPaths_, ...sutNode.argsToChildPaths_ };
-    node.isFinal_ = false;
     node.calls_ = [ ...userNode.calls_, ...sutNode.calls_ ];
     if (userNode.isTemp_ && sutNode.isTemp_) {
       node.value_ = sutNode.value_;
+      node.isTemp_ = true;
     }
     return node;
   }
@@ -569,7 +571,11 @@ class MockTree {
   toObject(path: string, options: TmockFullOptions): Undefinable {
     const node = this.tree[path];
     if (node.hasValue()) {
-      return new Undefinable(node.getValue());
+      let value = node.getValue();
+      if (node.isTemp()) {
+        value = options.autoValuesPrefix + (value || '<unnamed mock>');
+      }
+      return new Undefinable(value);
     }
 
     const collectValuesFromChildren = (res: Object, propsOrArgsToChildPaths: StringDictionary) =>
@@ -660,7 +666,7 @@ function applyCouplesToStub(stubWrapper: StubWrapper, initCouples: InitCouple[])
       prevStubRef: stubWrapper.stub,
       prevProp: '',
       stubReplacement: undefined,
-      pathBuilder: new PathBuilder('', '', {} as any),
+      pathBuilder: new PathBuilder('', ''),
     };
 
     const initializationProxy = getStubInitializationProxy(proxyContext);
@@ -690,6 +696,7 @@ export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProx
 
 let globalOptions: TmockGlobalOptions = {
   automock: true,
+  simplificationThreshold: 40,
   simplifiedOutput: true,
   defaultMockName: 'mock',
   quoteSymbol: '\'',
@@ -987,7 +994,7 @@ export function tmock<T = any>(
   }
 
   const mockId = (totalMocksCounter++).toString();
-  const pathBuilder = new PathBuilder(mockId, options.autoValuesPrefix + options.defaultMockName, options.simplifiedOutput);
+  const pathBuilder = new PathBuilder(mockId, options.defaultMockName, options);
   const userMockTree = new MockTree();
   userMockTree.setNode('', new TreeNodeTemp(options.defaultMockName));
   const sutMockTree = new MockTree();
