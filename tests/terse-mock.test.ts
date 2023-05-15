@@ -977,6 +977,38 @@ describe('-------------------- tset ---------------------', () => {
     expect(result).toEqual(value);
   });
 
+  test.each([
+    ['should copy enumerable descriptors enumerable properties with', true, 'a', 'b!!!'],
+    ['DOES NOT COPY NON-ENUMERABLE PROPERTIES', false, undefined, 'b'],
+  ])('%#', (__, enumerable, expectedProp1, expectedProp2) => {
+    // ARRANGE
+    const obj = {};
+    Object.defineProperty(obj, 'prop1', {
+      enumerable: enumerable,
+      value: 'a',
+    });
+    Object.defineProperty(obj, 'prop2', {
+      enumerable: enumerable,
+      get() {
+        return this._prop1;
+      },
+      set(x) {
+        this._prop1 = x + '!!!';
+      },
+    });
+
+    const mock = tmock([{
+      o: obj,
+    }]);
+
+    // ACT
+    mock.o.prop2 = 'b';
+
+    // ASSERT
+    expect(mock.o.prop1).toBe(expectedProp1);
+    expect(mock.o.prop2).toBe(expectedProp2);
+  });
+
   test('should return function that calls original function internally', () => {
     // ARRANGE
     const jestFunction = jest.fn();

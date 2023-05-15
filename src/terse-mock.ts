@@ -179,17 +179,23 @@ function deepCloneAndSpyify(_source: any, _pathBuilder: PathBuilder, _externalMo
 }
 
 function shallowMergeFromTo(from: Object, to: Object, mapper: PropMapperType = (val) => val, except: (string|symbol)[] = []) {
-  for (const [prop, val] of Object.entries(from)) {
-    if (!except.includes(prop)) {
-      to[prop] = mapper(val, prop);
-    }
+  for (const prop in from) {
+    copyPropOrSymbol(prop);
   }
   for (const symbol of Object.getOwnPropertySymbols(from) ) {
-    if (!except.includes(symbol)) {
-      to[symbol] = mapper(from[symbol], symbol);
-    }
+    copyPropOrSymbol(symbol);
   }
   return to;
+
+  function copyPropOrSymbol(propOrSymbol: string|symbol) {
+    if (!except.includes(propOrSymbol)) {
+      const descriptor = Object.getOwnPropertyDescriptor(from, propOrSymbol)!;
+      if (descriptor.value) {
+        descriptor.value = mapper(descriptor.value, propOrSymbol);
+      }
+      Object.defineProperty(to, propOrSymbol, descriptor);
+    }
+  }
 }
 
 const defaultProxyTarget = () => undefined;
@@ -214,7 +220,7 @@ function createMockFunction(thisArg: any, externalMock?: IExternalMock, defaultR
   if (externalMock) {
     mockFunction[EXTERNAL_MOCK] = externalMock.create();
   }
-  mockFunction[IS_A_MOCKED_FUNCTION] = context.argsToReturnValues;
+  mockFunction[IS_A_MOCKED_FUNCTION] = true;
   mockFunction[ARGS_TO_RETURN_VALUES] = context.argsToReturnValues;
   return mockFunction;
 }
