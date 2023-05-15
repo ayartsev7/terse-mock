@@ -52,16 +52,10 @@ function mockProxyToString(data: any, simplify: boolean) {
 
 function toString(data: any, simplify: boolean = false) {
   if (isArray(data)) {
-    if (data.length === 0) {
-      return '[]';
-    }
     return simplify ? '[...]' : '[' + data.map((item) => toString(item)).join(', ') + ']';
   }
   if (isObject(data)) {
     const props = Object.keys(data);
-    if (props.length === 0) {
-      return '{}';
-    }
     return simplify ? '{...}' : '{' + props.map((key) => key + ': ' + toString(data[key])).join(', ') + '}';
   }
   if (isFunction(data)) {

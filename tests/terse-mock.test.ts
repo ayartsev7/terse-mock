@@ -321,10 +321,10 @@ describe('----------------------- tmock options ------------------------', () =>
   describe('simplifiedOutput and simplificationThreshold', () => {
     test.each([
       [1, 'mock(1)', 'mock(1)'],
-      [{}, 'mock({})', 'mock({})'],
+      [{}, 'mock({})', 'mock({...})'],
       [{ '0': 7 }, 'mock({0: 7})', 'mock({...})'],
       [{ a: '7', b: 0 }, `mock({a: '7', b: 0})`, 'mock({...})'],
-      [[], 'mock([])', 'mock([])'],
+      [[], 'mock([])', 'mock([...])'],
       [[1], 'mock([1])', 'mock([...])'],
       [[`1`, true, {}], `mock(['1', true, {}])`, 'mock([...])'],
     ])('should simplify output %#', (arg, expectedResult, expectedResultSimplified) => {
