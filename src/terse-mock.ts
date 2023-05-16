@@ -981,7 +981,7 @@ function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitia
 export function tmock<T = any>(
   nameOrSetupOrOptionsArg?: string | InitObjectOrInitCouple<T>[] | TmockOptions,
   setupOrOptionsArg?: InitObjectOrInitCouple<T>[] | TmockOptions,
-  optionsArg?: TmockOptions)
+  optionsArg?: TmockOptions): T
 {
   const parsedArgs = parseTmockArgs(nameOrSetupOrOptionsArg, setupOrOptionsArg, optionsArg);
 
@@ -1020,7 +1020,7 @@ export function tmock<T = any>(
   return sutMockProxy;
 }
 
-export function tstub<T = any>(initializer: InitObjectOrInitCouple<T> | InitObjectOrInitCouple<T>[]) {
+export function tstub<T = any>(initializer: InitObjectOrInitCouple<T> | InitObjectOrInitCouple<T>[]): T {
   let initializers: (InitObject | InitCouple)[];
   if (!isArray(initializer)) {
     initializers = [initializer as InitObject];
@@ -1050,6 +1050,6 @@ export default {
   reset: treset,
   unmock: tunmock,
   info: tinfo,
-  calls: tcalls,
+  calls: tcalls, // TODO: remove, use tinfo()/tinfo(mock) instead
   globalopt: tglobalopt,
 };
