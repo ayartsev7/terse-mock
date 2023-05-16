@@ -2,7 +2,7 @@ const MOCK_PROXY_PATHBUILDER = Symbol('MOCK_PROXY_PATHBUILDER');
 const MOCK_PROXY_TO_OBJECT = Symbol('MOCK_PROXY_TO_OBJECT');
 const RESET_MOCK_PROXY = Symbol('RESET_MOCK_PROXY');
 const SET_MOCK_PROXY_RETURN_VALUES = Symbol('SET_MOCK_PROXY_RETURN_VALUES');
-const EXTERNAL_MOCK = Symbol('EXTERNAL_MOCK');
+const MOCK_PROXY_EXTERNAL_MOCK = Symbol('MOCK_PROXY_EXTERNAL_MOCK');
 const ARGS_TO_RETURN_VALUES = Symbol('ARGS_TO_RETURN_VALUES');
 const IS_A_MOCK_PROXY = Symbol('IS_A_MOCK_PROXY');
 const IS_A_SPY = Symbol('IS_A_SPY');
@@ -206,13 +206,13 @@ function createMockFunction(thisArg: any, externalMock?: IExternalMock, defaultR
   const mockFunction = function (...args: any[]) {
     const keyFromArgs = argsToString(args);
     if (externalMock) {
-      mockFunction[EXTERNAL_MOCK].apply(thisArg, args);
+      mockFunction[MOCK_PROXY_EXTERNAL_MOCK].apply(thisArg, args); // TODO: Remove EXTERNAL_MOCK from mocked functions and spies
     }
     return context.argsToReturnValues.hasOwnProperty(keyFromArgs) ? context.argsToReturnValues[keyFromArgs] : defaultReturnSetter(context);
   };
 
   if (externalMock) {
-    mockFunction[EXTERNAL_MOCK] = externalMock.create();
+    mockFunction[MOCK_PROXY_EXTERNAL_MOCK] = externalMock.create();
   }
   mockFunction[IS_A_MOCKED_FUNCTION] = true;
   mockFunction[ARGS_TO_RETURN_VALUES] = context.argsToReturnValues;
@@ -221,15 +221,15 @@ function createMockFunction(thisArg: any, externalMock?: IExternalMock, defaultR
 
 function createSpy(pathBuilder: PathBuilder, originalFunction: any, externalMock?: IExternalMock) {
   const spy = function () {
-    totalCallLog.push(pathBuilder.withCall([...arguments]));
+    totalCallLog.push(new CallInfo(null, [...arguments], pathBuilder.withCall([...arguments])));
     if (externalMock) {
-      spy[EXTERNAL_MOCK](...arguments);
+      spy[MOCK_PROXY_EXTERNAL_MOCK](...arguments);
     }
     return originalFunction(...arguments);
   };
   shallowMergeFromTo(originalFunction, spy);
   if (externalMock) {
-    spy[EXTERNAL_MOCK] = externalMock.create();
+    spy[MOCK_PROXY_EXTERNAL_MOCK] = externalMock.create();
   }
   spy[IS_A_SPY] = true;
   spy[ORIGINAL_FUNCTION] = originalFunction;
@@ -261,6 +261,8 @@ type TmockFullOptions = TmockGlobalOptions & TmockOptions;
 
 export type MockInfo = {
   externalMock: any;
+  calls: CallInfo[];
+  callLog: string[];
 }
 
 // TODO: implement mock times.
@@ -268,10 +270,12 @@ export type MockInfo = {
 class CallInfo {
   private this_: any;
   private args_: any[];
+  private pathBuilder_: PathBuilder;
 
-  constructor(thisArg: any, args: any[]) {
+  constructor(thisArg: any, args: any[], pathBuilder: PathBuilder) {
     this.this_ = thisArg;
     this.args_ = args;
+    this.pathBuilder_ = pathBuilder;
   }
 
   public get this() {
@@ -279,6 +283,9 @@ class CallInfo {
   }
   public get args() {
     return this.args_;
+  }
+  public get pathBuilder() {
+    return this.pathBuilder_;
   }
 }
 
@@ -395,6 +402,11 @@ class MockTreeNode {
   protected isTemp_ = false;
   protected calls_: CallInfo[] = [];
   protected value_ = new Undefinable();
+  protected pathBuilder_: PathBuilder;
+
+  constructor(pathBuilder: PathBuilder) {
+    this.pathBuilder_ = pathBuilder;
+  }
 
   static fromUserNodeAndSutNode(userNode: MockTreeNode, sutNode: MockTreeNode): MockTreeNode {
     if (sutNode.isFinal()) {
@@ -403,7 +415,7 @@ class MockTreeNode {
     if (userNode.isFinal()) {
       return userNode;
     }
-    const node = new MockTreeNode();
+    const node = new MockTreeNode(userNode.pathBuilder_);
     node.propsToChildPaths_ = { ...userNode.propsToChildPaths_, ...sutNode.propsToChildPaths_ };
     node.argsToChildPaths_ = { ...userNode.argsToChildPaths_, ...sutNode.argsToChildPaths_ };
     node.calls_ = [ ...userNode.calls_, ...sutNode.calls_ ];
@@ -431,8 +443,12 @@ class MockTreeNode {
     return this.propsToChildPaths_;
   }
 
-  hasBeenCalled() {
+  hasCalls() {
     return this.calls_.length > 0;
+  }
+
+  applyCallsToFuntion(f: Function) {
+    this.calls_.forEach((callInfo) => f.apply(callInfo.this, callInfo.args));
   }
 
   hasValue() {
@@ -443,11 +459,15 @@ class MockTreeNode {
     return this.value_.getValue();
   }
 
+  getPathBuilder() {
+    return this.pathBuilder_;
+  }
+
   toMockFunction(externalMock?: IExternalMock) {
     const f = createMockFunction({}, externalMock);
     if (externalMock) {
       // Call external mock the number of times the original tm mock was called.
-      this.calls_.forEach((callInfo) => f.apply(callInfo.this, callInfo.args));
+      this.applyCallsToFuntion(f);
     }
     return f;
   }
@@ -462,16 +482,16 @@ class MockTreeNode {
 }
 
 class TreeNodeTemp extends MockTreeNode {
-  constructor(value: any) {
-    super();
+  constructor(pathBuilder: PathBuilder) {
+    super(pathBuilder);
     this.isTemp_ = true;
-    this.value_.setValue(value);
+    this.value_.setValue(pathBuilder.pathToBeShown);
   }
 }
 
 class TreeNodeFinal extends MockTreeNode {
-  constructor(value: any) {
-    super();
+  constructor(pathBuilder: PathBuilder, value: any) {
+    super(pathBuilder);
     this.isFinal_ = true;
     this.value_.setValue(value);
   }
@@ -522,7 +542,7 @@ class MockTree {
   addChildIfNotExistOrReplaceTemp(childNode: MockTreeNode, childNodePathBuilder: PathBuilder, callInfo?: CallInfo) {
     // If parent node is temp node then replace it with a new node that doesn't have a value.
     // Only leaf nodes can have values.
-    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new MockTreeNode());
+    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new MockTreeNode(childNodePathBuilder.parentPathBuilder));
 
     const childNodePath = childNodePathBuilder.path;
     if (this.isNodeNotExistOrIsTempNode(childNodePath)) {
@@ -536,7 +556,7 @@ class MockTree {
   }
 
   addChild(childNode: MockTreeNode, childNodePathBuilder: PathBuilder) {
-    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new MockTreeNode());
+    const parentNode = this.getOrAddOrReplaceTemp(childNodePathBuilder.parentPathBuilder.path, new MockTreeNode(childNodePathBuilder.parentPathBuilder));
     this.setNode(childNodePathBuilder.path, childNode);
     parentNode.linkChildViaProp(childNodePathBuilder);
   }
@@ -582,7 +602,7 @@ class MockTree {
       shallowMergeFromTo(propsOrArgsToChildPaths, res, (val) => this.toObject(val, options).getValue());
 
     let result = {};
-    if (node.hasBeenCalled()) { // node represents something collable.
+    if (node.hasCalls()) { // node represents something collable.
       result = node.toMockFunction(options.externalMock);
       collectValuesFromChildren(result[ARGS_TO_RETURN_VALUES], node.getArgsToChildPaths());
     }
@@ -592,7 +612,7 @@ class MockTree {
   }
 }
 
-let totalCallLog: PathBuilder[] = [];
+let totalCallLog: CallInfo[] = [];
 
 let totalMocksCounter = 0;
 
@@ -631,12 +651,21 @@ export function tunmock(_data) {
   }
 }
 
-export function tinfo(data: any): MockInfo {
-  if (isMockProxy(data)) {
-    data = tunmock(data);
+export function tinfo(mock?: any): MockInfo {
+  if (!mock) {
+    return {
+      externalMock: undefined,
+      calls: [],
+      callLog: totalCallLog.map((call) => call.pathBuilder.pathToBeShown),
+    }
   }
+  const pathBuilder = mock[MOCK_PROXY_PATHBUILDER];
   return {
-    externalMock: data[EXTERNAL_MOCK],
+    externalMock: mock[MOCK_PROXY_EXTERNAL_MOCK],
+    calls: [],
+    callLog: !pathBuilder ? [] : totalCallLog
+      .filter((call) => call.pathBuilder.groupId === pathBuilder.groupId && call.pathBuilder.path.startsWith(pathBuilder.path))
+      .map((call) => call.pathBuilder.pathToBeShown),
   };
 }
 
@@ -647,16 +676,6 @@ export function treset(mock?: any) { // TODO: this function should not reset dat
   }
   sutMockTrees.forEach((mockTree) => mockTree.deleteSubtree());
   totalCallLog = [];
-}
-
-export function tcalls(mock?: any): string[] {
-  if (!mock) {
-    return totalCallLog.map((call) => call.pathToBeShown);
-  }
-  const pathBuilder = mock[MOCK_PROXY_PATHBUILDER] as PathBuilder;
-  return totalCallLog
-    .filter((call) => call.groupId == pathBuilder.groupId && call.path.startsWith(pathBuilder.path))
-    .map((call) => call.pathToBeShown);
 }
 
 function applyCouplesToStub(stubWrapper: StubWrapper, initCouples: InitCouple[]) {
@@ -714,8 +733,10 @@ export function tglobalopt(options?: Partial<TmockGlobalOptions>): TmockGlobalOp
 
 export type InitCouple<T = any> = [(mockProxy: T) => any, any];
 //export type InitTriple = [(mockProxy: any) => any, any, number];
-export type InitObject = {[index: string]: unknown};
-type InitObjectOrInitCouple<T> = (T extends {} ? Partial<T> : InitCouple<T>) | InitCouple<T>;
+export type InitObject = {[index: string]: any};
+type InitObjectOrInitCouple<T = any> =
+  undefined extends T ? (InitObject | InitCouple) : ((T extends {} ? Partial<T> : InitCouple<T>) | InitCouple<T>);
+
 export type AnyInitializer = InitObject | InitCouple;
 
 function getStubInitializationProxy(proxyContext: StubInitializationProxyContext) {
@@ -773,12 +794,13 @@ function getMockInitializationProxy(proxyContext: MockInitializationProxyContext
   const proxy = new Proxy(defaultProxyTarget, {
     get(target, prop) {
       proxyContext.pathBuilder = proxyContext.pathBuilder.withProp(prop);
-      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new MockTreeNode(), proxyContext.pathBuilder);
+      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new MockTreeNode(proxyContext.pathBuilder), proxyContext.pathBuilder);
       return pickProxy();
     },
     apply(target, thisArg, args) {
       proxyContext.pathBuilder = proxyContext.pathBuilder.withCall(args);
-      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new MockTreeNode(), proxyContext.pathBuilder, new CallInfo(thisArg, args));
+      proxyContext.tree.addChildIfNotExistOrReplaceTemp(new MockTreeNode(proxyContext.pathBuilder), proxyContext.pathBuilder,
+        new CallInfo(thisArg, args, proxyContext.pathBuilder));
       return pickProxy();
     },
   });
@@ -822,12 +844,12 @@ function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder,
 
     const val = deepCloneAndSpyify(initCouple[1], proxyContext.pathBuilder, options.externalMock);
     if (!stubProxyContext) {
-      userMockTree.setNode(path, new TreeNodeFinal(val));
+      userMockTree.setNode(path, new TreeNodeFinal(proxyContext.pathBuilder, val));
     } else {
       if (stubProxyContext.stubReplacement) {
-        userMockTree.setNode(path, new TreeNodeFinal(stubProxyContext.stubReplacement));
+        userMockTree.setNode(path, new TreeNodeFinal(proxyContext.pathBuilder, stubProxyContext.stubReplacement));
       } else if (!stubProxyContext.prevProp) {
-        userMockTree.setNode(path, new TreeNodeFinal(val));
+        userMockTree.setNode(path, new TreeNodeFinal(proxyContext.pathBuilder, val));
       }
       if (stubProxyContext.prevProp) {
         stubProxyContext.prevStubRef[stubProxyContext.prevProp] = val;
@@ -866,9 +888,9 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: TmockGlobalOption
     return undefined;
   }
 
-  sutMockTree.addChildIfNotExistOrReplaceTemp(new TreeNodeTemp(pathBuilder.pathToBeShown), pathBuilder, callInfo);
+  sutMockTree.addChildIfNotExistOrReplaceTemp(new TreeNodeTemp(pathBuilder), pathBuilder, callInfo);
   if (callInfo) {
-    totalCallLog.push(pathBuilder);
+    totalCallLog.push(callInfo);
   }
 
   return getSutProxy(pathBuilder, options);
@@ -890,6 +912,14 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
             .toObject(pathBuilder.path, options)
             .getValue();
         case 'hasOwnProperty': return () => true;
+        case MOCK_PROXY_EXTERNAL_MOCK:
+          if (!options.externalMock) {
+            return undefined;
+          }
+          const node = sutMockTree.getNode(path)!;
+          const externalMock = options.externalMock.create();
+          node.applyCallsToFuntion(externalMock);
+          return externalMock;
         case Symbol.toPrimitive: return target as any; // Prevent from 'TypeError: Cannot convert object to primitive value'.
       }
 
@@ -897,7 +927,8 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
     },
 
     set(target, prop, value) {
-      sutMockTree.addChild(new TreeNodeFinal(value), pathBuilder.withProp(prop));
+      const newPathBuilder = pathBuilder.withProp(prop);
+      sutMockTree.addChild(new TreeNodeFinal(newPathBuilder, value), newPathBuilder);
       return true;
     },
 
@@ -912,7 +943,7 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
         } else if (firstArg === RESET_MOCK_PROXY) {
           if (sutMockTree.getNode(path)) {
             sutMockTree.deleteSubtree(path);
-            sutMockTree.setNode(path, new TreeNodeTemp(pathBuilder.pathToBeShown));
+            sutMockTree.setNode(path, new TreeNodeTemp(pathBuilder));
             // Reset nested mocks.
             userMockTree.forEachSubtreeNode(path, (node) => {
               const nodeValue = node.getValue();
@@ -922,12 +953,13 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
             });
           }
           totalCallLog = totalCallLog
-            .filter((call) => call.groupId !== pathBuilder.groupId || !call.path.startsWith(path));
+            .filter((call) => call.pathBuilder.groupId !== pathBuilder.groupId || !call.pathBuilder.path.startsWith(path));
           return undefined;
         }
       }
 
-      return traversePropOrCall(pathBuilder.withCall(args), options, new CallInfo(thisArg, args));
+      const pathBuilderWithCall = pathBuilder.withCall(args);
+      return traversePropOrCall(pathBuilderWithCall, options, new CallInfo(thisArg, args, pathBuilderWithCall));
     },
   });
 
@@ -996,9 +1028,9 @@ export function tmock<T = any>(
   const mockId = (totalMocksCounter++).toString();
   const pathBuilder = new PathBuilder(mockId, options.defaultMockName, options);
   const userMockTree = new MockTree();
-  userMockTree.setNode('', new TreeNodeTemp(options.defaultMockName));
+  userMockTree.setNode('', new TreeNodeTemp(pathBuilder));
   const sutMockTree = new MockTree();
-  sutMockTree.setNode('', new TreeNodeTemp(options.defaultMockName));
+  sutMockTree.setNode('', new TreeNodeTemp(pathBuilder));
   userMockTrees[mockId] = userMockTree;
   sutMockTrees[mockId] = sutMockTree;
 
@@ -1050,6 +1082,5 @@ export default {
   reset: treset,
   unmock: tunmock,
   info: tinfo,
-  calls: tcalls, // TODO: remove, use tinfo()/tinfo(mock) instead
   globalopt: tglobalopt,
 };

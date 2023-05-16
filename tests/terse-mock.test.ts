@@ -1,4 +1,4 @@
-﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tcalls, tglobalopt, IExternalMock, InitCouple, AnyInitializer,
+﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tglobalopt, IExternalMock, InitCouple, AnyInitializer,
   TmockGlobalOptions, tstub, TmockOptions,
 } from '../src/terse-mock';
 
@@ -67,7 +67,6 @@ test('all exported functions should have analogues in tm', () => {
   expect(tm.stub).toBe(tstub);
   expect(tm.unmock).toBe(tunmock);
   expect(tm.info).toBe(tinfo);
-  expect(tm.calls).toBe(tcalls);
   expect(tm.globalopt).toBe(tglobalopt);
 });
 
@@ -236,6 +235,7 @@ describe('----------------------- tmock arguments ------------------------', () 
     // ARRANGE
     interface I {
       a: number;
+      b: { c: string };
     }
 
     // ACT + ASSERT
@@ -251,6 +251,8 @@ describe('----------------------- tmock arguments ------------------------', () 
       { a: 1 },
       [(m) => m.a, 1],
     ]);
+    const mock = tm.mock<I>();
+    mock.b.c;
   });
 
   test('should throw when more then one initializer argument provided', () => {
@@ -1466,7 +1468,7 @@ describe('------------------- treset --------------------', () => {
     mock1.prop.f(Infinity).prop.f2([]);
 
     // ASSERT
-    expect(tcalls()).toEqual([
+    expect(tinfo().callLog).toEqual([
       'mock1.prop.f(Infinity)',
       'mock1.f()',
       'mock2.f()',
@@ -1475,52 +1477,52 @@ describe('------------------- treset --------------------', () => {
       'mock1.prop.f(Infinity)',
       'mock1.prop.f(Infinity).prop.f2([])',
     ]);
-    expect(tcalls(mock1)).toEqual([
+    expect(tinfo(mock1).callLog).toEqual([
       'mock1.prop.f(Infinity)',
       'mock1.f()',
       'mock1.prop.f()',
       'mock1.prop.f(Infinity)',
       'mock1.prop.f(Infinity).prop.f2([])',
     ]);
-    expect(tcalls(mock2)).toEqual([
+    expect(tinfo(mock2).callLog).toEqual([
       'mock2.f()',
       'mock2(<function>, [1], {0: 1})',
     ]);
 
     // Reset mock1.prop.f(Infinity).
     treset(mock3);
-    expect(tcalls()).toEqual([
+    expect(tinfo().callLog).toEqual([
       'mock1.f()',
       'mock2.f()',
       'mock1.prop.f()',
       'mock2(<function>, [1], {0: 1})',
     ]);
-    expect(tcalls(mock1)).toEqual([
+    expect(tinfo(mock1).callLog).toEqual([
       'mock1.f()',
       'mock1.prop.f()',
     ]);
-    expect(tcalls(mock2)).toEqual([
+    expect(tinfo(mock2).callLog).toEqual([
       'mock2.f()',
       'mock2(<function>, [1], {0: 1})',
     ]);
 
     // Reset mock2.
     treset(mock2);
-    expect(tcalls()).toEqual([
+    expect(tinfo().callLog).toEqual([
       'mock1.f()',
       'mock1.prop.f()',
     ]);
-    expect(tcalls(mock1)).toEqual([
+    expect(tinfo(mock1).callLog).toEqual([
       'mock1.f()',
       'mock1.prop.f()',
     ]);
-    expect(tcalls(mock2)).toEqual([]);
+    expect(tinfo(mock2).callLog).toEqual([]);
 
     // Reset mock2.
     treset(mock1);
-    expect(tcalls()).toEqual([]);
-    expect(tcalls(mock1)).toEqual([]);
-    expect(tcalls(mock2)).toEqual([]);
+    expect(tinfo().callLog).toEqual([]);
+    expect(tinfo(mock1).callLog).toEqual([]);
+    expect(tinfo(mock2).callLog).toEqual([]);
   });
 
   test('should erase touches of all mocks when argument is not provided', () => {
@@ -1550,127 +1552,128 @@ describe('------------------- treset --------------------', () => {
   });
 });
 
-describe('-------------------- tcalls -------------------', () => {
-  test('should return only mock calls when mock argument is provided, otherwise all calls', () => {
-    // ARRANGE
-    treset();
-    const mock1 = tmock('mock1', [{ f: function fff() {} }]);
-    const mock2 = tmock('mock2', [{ f: function fff() {} }]);
-
-    // ACT
-    mock1.f();
-    mock1.f(NaN);
-    mock2.f();
-    mock1.g();
-    mock2();
-    mock2.f1('1');
-    mock2.f1(1).f2(2);
-    mock2.f1(1).f2(2).f3(null, Symbol());
-
-    // ASSERT
-    expect(tcalls()).toEqual([
-      'mock1.f()',
-      'mock1.f(NaN)',
-      'mock2.f()',
-      'mock1.g()',
-      'mock2()',
-      `mock2.f1('1')`,
-      'mock2.f1(1)',
-      'mock2.f1(1).f2(2)',
-      'mock2.f1(1)',
-      'mock2.f1(1).f2(2)',
-      'mock2.f1(1).f2(2).f3(null, Symbol())',
-    ]);
-    expect(tcalls(mock1)).toEqual([
-      'mock1.f()',
-      'mock1.f(NaN)',
-      'mock1.g()',
-    ]);
-    expect(tcalls(mock2)).toEqual([
-      'mock2.f()',
-      'mock2()',
-      `mock2.f1('1')`,
-      'mock2.f1(1)',
-      'mock2.f1(1).f2(2)',
-      'mock2.f1(1)',
-      'mock2.f1(1).f2(2)',
-      'mock2.f1(1).f2(2).f3(null, Symbol())',
-    ]);
-  });
-
-  test('should not wrap mocks into quotes', () => {
-    // ARRANGE
-    function f(arg1, arg2) {
-      arg1(arg2.prop.p);
-    }
-    const mock1 = tmock('mock1', { simplifiedOutput: false });
-    const mock2 = tmock('mock2', { simplifiedOutput: false });
-    f(mock1, mock2);
-
-    // ACT
-    const res = tcalls(mock1);
-
-    // ASSERT
-    expect(res).toEqual(['mock1(mock2.prop.p)']);
-  });
-
-  test('should filter calls', () => {
-    // ARRANGE
-    function f(arg1) {
-      arg1;
-      arg1.a;
-      arg1();
-      arg1.a.f();
-      arg1.fff();
-      arg1.fff(arg1.fff(7));
-    }
-    const mock1 = tmock('mock1');
-    f(mock1);
-
-    // ASSERT
-    expect(tcalls(mock1)).toEqual(['mock1()', 'mock1.a.f()', 'mock1.fff()', 'mock1.fff(7)', 'mock1.fff(mock1.fff(7))']);
-    expect(tcalls(mock1.a)).toEqual(['mock1.a.f()']);
-    expect(tcalls(mock1.a.f)).toEqual(['mock1.a.f()']);
-    expect(tcalls(mock1.fff)).toEqual(['mock1.fff()', 'mock1.fff(7)', 'mock1.fff(mock1.fff(7))']);
-  });
-});
-
 describe('----------------- tinfo ------------------', () => {
-  test.each([
-    ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE),
-  ])('should setup externalMock property for functions if externalMock argument is provided %#', (initialStub) =>
-  {
-    // ACT
-    const mock = tm.mock([{ f: initialStub }], { externalMock: jestMock });
+  describe('externalMock', () => {
+    test.each([
+      ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE),
+    ])('should setup externalMock property for functions if externalMock argument is provided %#', (initialStub) =>
+    {
+      // ACT
+      const mock = tm.mock([{ f: initialStub }], { externalMock: jestMock });
 
-    // ASSERT
-    const res = tm.unmock(mock);
-    expect(tinfo(res.f).externalMock).toBeDefined();
+      // ASSERT
+      //const res = tm.unmock(mock);
+      expect(tinfo(mock.f).externalMock).toBeDefined();
+    });
+
+    test.each([
+      ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE),
+    ])('should not setup externalMock property for functions if externalMock argument is not provided %#', (initialStub) =>
+    {
+      // ACT
+      const mock = tm.mock([{ f: initialStub }]);
+
+      // ASSERT
+      //const res = tm.unmock(mock);
+      expect(tinfo(mock.f).externalMock).toBeUndefined();
+    });
+
+    test('should accept mock as argument', () => {
+      // ARRANGE
+      const mock = tmock({ externalMock: jestMock });
+
+      // ACT
+      mock.f();
+
+      // ASSERT
+      expect(tinfo(mock.f).externalMock).toBeCalledTimes(1);
+    });
   });
 
-  test.each([
-    ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE),
-  ])('should not setup externalMock property for functions if externalMock argument is not provided %#', (initialStub) =>
-  {
-    // ACT
-    const mock = tm.mock([{ f: initialStub }]);
+  describe('callLog', () => {
+    test('should return only mock calls when mock argument is provided, otherwise all calls', () => {
+      // ARRANGE
+      treset();
+      const mock1 = tmock('mock1', [{ f: function fff() {} }]);
+      const mock2 = tmock('mock2', [{ f: function fff() {} }]);
 
-    // ASSERT
-    const res = tm.unmock(mock);
-    expect(tinfo(res.f).externalMock).toBeUndefined();
+      // ACT
+      mock1.f();
+      mock1.f(NaN);
+      mock2.f();
+      mock1.g();
+      mock2();
+      mock2.f1('1');
+      mock2.f1(1).f2(2);
+      mock2.f1(1).f2(2).f3(null, Symbol());
+
+      // ASSERT
+      expect(tinfo().callLog).toEqual([
+        'mock1.f()',
+        'mock1.f(NaN)',
+        'mock2.f()',
+        'mock1.g()',
+        'mock2()',
+        `mock2.f1('1')`,
+        'mock2.f1(1)',
+        'mock2.f1(1).f2(2)',
+        'mock2.f1(1)',
+        'mock2.f1(1).f2(2)',
+        'mock2.f1(1).f2(2).f3(null, Symbol())',
+      ]);
+      expect(tinfo(mock1).callLog).toEqual([
+        'mock1.f()',
+        'mock1.f(NaN)',
+        'mock1.g()',
+      ]);
+      expect(tinfo(mock2).callLog).toEqual([
+        'mock2.f()',
+        'mock2()',
+        `mock2.f1('1')`,
+        'mock2.f1(1)',
+        'mock2.f1(1).f2(2)',
+        'mock2.f1(1)',
+        'mock2.f1(1).f2(2)',
+        'mock2.f1(1).f2(2).f3(null, Symbol())',
+      ]);
+    });
+
+    test('should not wrap mocks into quotes', () => {
+      // ARRANGE
+      function f(arg1, arg2) {
+        arg1(arg2.prop.p);
+      }
+      const mock1 = tmock('mock1', { simplifiedOutput: false });
+      const mock2 = tmock('mock2', { simplifiedOutput: false });
+      f(mock1, mock2);
+
+      // ACT
+      const res = tinfo(mock1).callLog;
+
+      // ASSERT
+      expect(res).toEqual(['mock1(mock2.prop.p)']);
+    });
+
+    test('should filter calls', () => {
+      // ARRANGE
+      function f(arg1) {
+        arg1;
+        arg1.a;
+        arg1();
+        arg1.a.f();
+        arg1.fff();
+        arg1.fff(arg1.fff(7));
+      }
+      const mock1 = tmock('mock1');
+      f(mock1);
+
+      // ASSERT
+      expect(tinfo(mock1).callLog).toEqual(['mock1()', 'mock1.a.f()', 'mock1.fff()', 'mock1.fff(7)', 'mock1.fff(mock1.fff(7))']);
+      expect(tinfo(mock1.a).callLog).toEqual(['mock1.a.f()']);
+      expect(tinfo(mock1.a.f).callLog).toEqual(['mock1.a.f()']);
+      expect(tinfo(mock1.fff).callLog).toEqual(['mock1.fff()', 'mock1.fff(7)', 'mock1.fff(mock1.fff(7))']);
+    });
   });
-
-  test('should accept mock as argument', () => {
-    // ARRANGE
-    const mock = tmock({ externalMock: jestMock });
-
-    // ACT
-    mock.f();
-
-    // ASSERT
-    expect(tinfo(mock.f).externalMock).toBeCalledTimes(1);
-  });
-
 });
 
 describe ('---------------- test with js -----------------', () => {
