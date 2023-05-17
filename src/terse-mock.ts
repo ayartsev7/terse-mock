@@ -1,8 +1,8 @@
-const MOCK_PROXY_PATHBUILDER = Symbol('MOCK_PROXY_PATHBUILDER');
+const PATHBUILDER = Symbol('PATHBUILDER');
 const MOCK_PROXY_TO_OBJECT = Symbol('MOCK_PROXY_TO_OBJECT');
 const RESET_MOCK_PROXY = Symbol('RESET_MOCK_PROXY');
 const SET_MOCK_PROXY_RETURN_VALUES = Symbol('SET_MOCK_PROXY_RETURN_VALUES');
-const MOCK_PROXY_EXTERNAL_MOCK = Symbol('MOCK_PROXY_EXTERNAL_MOCK');
+const EXTERNAL_MOCK = Symbol('EXTERNAL_MOCK');
 const ARGS_TO_RETURN_VALUES = Symbol('ARGS_TO_RETURN_VALUES');
 const IS_A_MOCK_PROXY = Symbol('IS_A_MOCK_PROXY');
 const IS_A_SPY = Symbol('IS_A_SPY');
@@ -39,7 +39,7 @@ function functionToString(data: any): string {
 }
 
 function mockProxyToString(data: any, simplify: boolean) {
-  const pathBuilder = data[MOCK_PROXY_PATHBUILDER] as PathBuilder;
+  const pathBuilder = data[PATHBUILDER] as PathBuilder;
   let result = pathBuilder.pathToBeShown;
   if (simplify) {
     const options = pathBuilder.options;
@@ -160,8 +160,8 @@ function deepCloneAndSpyify(_source: any, _pathBuilder: PathBuilder, _externalMo
       if (!isInstanceofObject(source)) {
         // Special case for entities that has typeof === 'function' but that are not instanceof Object.
         // jest.fn() instances fall here, we make this check to return jest.fn() instance as is,
-        // otherwise we may end up with problems like incorrect results of jest matchers or stack overflows.
-        return externalMock ? createSpy(pathBuilder, source, externalMock) : source;
+        // otherwise we may end up with problems like incorrect results of jest matchers.
+        return createSpy(pathBuilder, source, externalMock);
       }
       const result = createSpy(pathBuilder, source.bind(thisArg), externalMock); // TODO: test this binding
       shallowMergeFromTo(source, result, (val) => deepCloneAndSpyifyInternal(val, pathBuilder, externalMock, source));
@@ -198,22 +198,16 @@ export interface IExternalMock {
   create: () => any;
 }
 
-function createMockFunction(thisArg: any, externalMock?: IExternalMock, defaultReturnSetter: (context: MockFunctionContext) => any = () => undefined) {
+function createMockFunction(thisArg: any, defaultReturnSetter: (context: MockFunctionContext) => any = () => undefined) {
   const context: MockFunctionContext = {
     argsToReturnValues: {},
   };
 
   const mockFunction = function (...args: any[]) {
     const keyFromArgs = argsToString(args);
-    if (externalMock) {
-      mockFunction[MOCK_PROXY_EXTERNAL_MOCK].apply(thisArg, args); // TODO: Remove EXTERNAL_MOCK from mocked functions and spies
-    }
     return context.argsToReturnValues.hasOwnProperty(keyFromArgs) ? context.argsToReturnValues[keyFromArgs] : defaultReturnSetter(context);
   };
 
-  if (externalMock) {
-    mockFunction[MOCK_PROXY_EXTERNAL_MOCK] = externalMock.create();
-  }
   mockFunction[IS_A_MOCKED_FUNCTION] = true;
   mockFunction[ARGS_TO_RETURN_VALUES] = context.argsToReturnValues;
   return mockFunction;
@@ -223,14 +217,15 @@ function createSpy(pathBuilder: PathBuilder, originalFunction: any, externalMock
   const spy = function () {
     totalCallLog.push(new CallInfo(null, [...arguments], pathBuilder.withCall([...arguments])));
     if (externalMock) {
-      spy[MOCK_PROXY_EXTERNAL_MOCK](...arguments);
+      spy[EXTERNAL_MOCK](...arguments);
     }
     return originalFunction(...arguments);
   };
   shallowMergeFromTo(originalFunction, spy);
   if (externalMock) {
-    spy[MOCK_PROXY_EXTERNAL_MOCK] = externalMock.create();
+    spy[EXTERNAL_MOCK] = externalMock.create();
   }
+  spy[PATHBUILDER] = pathBuilder;
   spy[IS_A_SPY] = true;
   spy[ORIGINAL_FUNCTION] = originalFunction;
   return spy;
@@ -459,17 +454,8 @@ class MockTreeNode {
     return this.value_.getValue();
   }
 
-  getPathBuilder() {
-    return this.pathBuilder_;
-  }
-
-  toMockFunction(externalMock?: IExternalMock) {
-    const f = createMockFunction({}, externalMock);
-    if (externalMock) {
-      // Call external mock the number of times the original tm mock was called.
-      this.applyCallsToFuntion(f);
-    }
-    return f;
+  toMockFunction() {
+    return createMockFunction({});
   }
 
   isFinal() {
@@ -603,7 +589,7 @@ class MockTree {
 
     let result = {};
     if (node.hasCalls()) { // node represents something collable.
-      result = node.toMockFunction(options.externalMock);
+      result = node.toMockFunction();
       collectValuesFromChildren(result[ARGS_TO_RETURN_VALUES], node.getArgsToChildPaths());
     }
     collectValuesFromChildren(result, node.getPropsToChildPaths());
@@ -651,17 +637,20 @@ export function tunmock(_data) {
   }
 }
 
-export function tinfo(mock?: any): MockInfo {
-  if (!mock) {
+export function tinfo(mockOrSpy?: any): MockInfo {
+  if (!mockOrSpy) {
     return {
       externalMock: undefined,
       calls: [],
       callLog: totalCallLog.map((call) => call.pathBuilder.pathToBeShown),
     }
   }
-  const pathBuilder = mock[MOCK_PROXY_PATHBUILDER];
+  if (!isMockProxy(mockOrSpy) && !isSpy(mockOrSpy)) {
+    throw new Error('tinfo: argument should be either mock or spy');
+  }
+  const pathBuilder = mockOrSpy[PATHBUILDER];
   return {
-    externalMock: mock[MOCK_PROXY_EXTERNAL_MOCK],
+    externalMock: mockOrSpy[EXTERNAL_MOCK],
     calls: [],
     callLog: !pathBuilder ? [] : totalCallLog
       .filter((call) => call.pathBuilder.groupId === pathBuilder.groupId && call.pathBuilder.path.startsWith(pathBuilder.path))
@@ -760,7 +749,7 @@ function getStubInitializationProxy(proxyContext: StubInitializationProxyContext
       const key = proxyContext.pathBuilder.latestPathChunk;
       let stubRef = proxyContext.stubRef;
       if (!isMockedFunction(stubRef)) {
-        const stubFunc = createMockFunction(thisArg, undefined, (context) => context.argsToReturnValues[ANY_ARGS]);
+        const stubFunc = createMockFunction(thisArg, (context) => context.argsToReturnValues[ANY_ARGS]);
         shallowMergeFromTo(stubRef, stubFunc);
         stubRef = replaceStub(stubFunc);
       }
@@ -905,14 +894,14 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
       // Handle special properties.
       switch (prop) {
         case IS_A_MOCK_PROXY: return true;
-        case MOCK_PROXY_PATHBUILDER: return pathBuilder;
+        case PATHBUILDER: return pathBuilder;
         case MOCK_PROXY_TO_OBJECT:
           return MockTree
             .fromUserTreeAndSutTree(userMockTree, sutMockTree)
             .toObject(pathBuilder.path, options)
             .getValue();
         case 'hasOwnProperty': return () => true;
-        case MOCK_PROXY_EXTERNAL_MOCK:
+        case EXTERNAL_MOCK:
           if (!options.externalMock) {
             return undefined;
           }

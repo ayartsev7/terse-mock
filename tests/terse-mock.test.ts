@@ -292,13 +292,12 @@ describe('----------------------- tmock options ------------------------', () =>
       mock.f6();
 
       // ASSERT
-      const res = tunmock(mock)
-      expect(tinfo(res.f1).externalMock).not.toBeCalled();
-      expect(tinfo(res.f2).externalMock).toBeCalledTimes(1);
-      expect(tinfo(res.p.f3).externalMock.mock.calls).toEqual([[], [1], [expect.any(Function), undefined] ]);
-      expect(tinfo(res.f4[0]).externalMock.mock.calls).toEqual([[true, false]]);
-      expect(tinfo(res.p.f5).externalMock.mock.calls).toEqual([['']]);
-      expect(tinfo(res.f6).externalMock).toBeCalledTimes(1);
+      expect(tinfo(mock.f1).externalMock).not.toBeCalled();
+      expect(tinfo(mock.f2).externalMock).toBeCalledTimes(1);
+      expect(tinfo(mock.p.f3).externalMock.mock.calls).toEqual([[], [1], [expect.any(Function), undefined] ]);
+      expect(tinfo(mock.f4[0]).externalMock.mock.calls).toEqual([[true, false]]);
+      expect(tinfo(mock.p.f5).externalMock.mock.calls).toEqual([['']]);
+      expect(tinfo(mock.f6).externalMock).toBeCalledTimes(1);
     });
 
     test('should consider calls of functions that were not explicitly defined', () => {
@@ -313,10 +312,9 @@ describe('----------------------- tmock options ------------------------', () =>
       mock.q[0](true, false);
 
       // ASSERT
-      const res = tunmock(mock);
-      expect(tinfo(res.f1).externalMock).toBeCalledTimes(1);
-      expect(tinfo(res.p.f2).externalMock.mock.calls).toEqual([[], [1], [expect.any(Function), undefined] ]);
-      expect(tinfo(res.q[0]).externalMock.mock.calls).toEqual([[true, false]]);
+      expect(tinfo(mock.f1).externalMock).toBeCalledTimes(1);
+      expect(tinfo(mock.p.f2).externalMock.mock.calls).toEqual([[], [1], [expect.any(Function), undefined] ]);
+      expect(tinfo(mock.q[0]).externalMock.mock.calls).toEqual([[true, false]]);
     });
   });
 
@@ -428,15 +426,6 @@ describe('-------------------- mock behavior ----------------------', () => {
     expect(mock.a).toEqual(initialStub);
   });
 
-  test('should return predefined jest mocks as is', () => {
-    // ARRANGE
-    const jestMock = jest.fn();
-    const mock = tm.mock([{ a: jestMock }]);
-
-    // ACT + ASSERT
-    expect(mock.a).toBe(jestMock);
-  });
-
   test('should return predefined classes as is', () => {
     // ARRANGE
     class A {};
@@ -545,10 +534,8 @@ describe('-------------------- mock behavior ----------------------', () => {
     mock.f(7);
 
     // ASSERT
-    const res = tunmock(mock);
-
-    expect(res.f).toBeCalledTimes(2);
-    expect(tinfo(res.f).externalMock).toBeCalledTimes(2);
+    expect(mock.f).toBeCalledTimes(2);
+    expect(tinfo(mock.f).externalMock).toBeCalledTimes(2);
   });
 
   test('should return empty array for spread operator', () => {
@@ -1553,48 +1540,43 @@ describe('------------------- treset --------------------', () => {
 });
 
 describe('----------------- tinfo ------------------', () => {
+  test('should throw when argument is neither mock nor spy', () =>
+  {
+    // ACT + ASSERT
+    expect(() => tinfo(() => undefined)).toThrowError('tinfo: argument should be either mock or spy');
+  });
+
   describe('externalMock', () => {
     test.each([
-      ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE),
-    ])('should setup externalMock property for functions if externalMock argument is provided %#', (initialStub) =>
+      ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE,
+      jest.fn(() => DFAULT_NUMERIC_VALUE),
+    ])('should setup externalMock property for functions when external mock is set %#', (initialStub) =>
     {
       // ACT
       const mock = tm.mock([{ f: initialStub }], { externalMock: jestMock });
 
       // ASSERT
-      //const res = tm.unmock(mock);
       expect(tinfo(mock.f).externalMock).toBeDefined();
     });
 
     test.each([
-      ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE, jest.fn(() => DFAULT_NUMERIC_VALUE),
-    ])('should not setup externalMock property for functions if externalMock argument is not provided %#', (initialStub) =>
+      ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE,
+      jest.fn(() => DFAULT_NUMERIC_VALUE),
+    ])('should not setup externalMock property for functions when external mock is not set %#', (initialStub) =>
     {
       // ACT
       const mock = tm.mock([{ f: initialStub }]);
 
       // ASSERT
-      //const res = tm.unmock(mock);
       expect(tinfo(mock.f).externalMock).toBeUndefined();
-    });
-
-    test('should accept mock as argument', () => {
-      // ARRANGE
-      const mock = tmock({ externalMock: jestMock });
-
-      // ACT
-      mock.f();
-
-      // ASSERT
-      expect(tinfo(mock.f).externalMock).toBeCalledTimes(1);
     });
   });
 
   describe('callLog', () => {
-    test('should return only mock calls when mock argument is provided, otherwise all calls', () => {
+    test('should return only mock calls when argument is provided, otherwise all calls', () => {
       // ARRANGE
       treset();
-      const mock1 = tmock('mock1', [{ f: function fff() {} }]);
+      const mock1 = tmock('mock1', [{ f: function () {} }]);
       const mock2 = tmock('mock2', [{ f: function fff() {} }]);
 
       // ACT
@@ -1656,7 +1638,7 @@ describe('----------------- tinfo ------------------', () => {
 
     test('should filter calls', () => {
       // ARRANGE
-      function f(arg1) {
+      function sut(arg1) {
         arg1;
         arg1.a;
         arg1();
@@ -1665,13 +1647,38 @@ describe('----------------- tinfo ------------------', () => {
         arg1.fff(arg1.fff(7));
       }
       const mock1 = tmock('mock1');
-      f(mock1);
+      sut(mock1);
 
-      // ASSERT
+      // ACT + ASSERT
       expect(tinfo(mock1).callLog).toEqual(['mock1()', 'mock1.a.f()', 'mock1.fff()', 'mock1.fff(7)', 'mock1.fff(mock1.fff(7))']);
       expect(tinfo(mock1.a).callLog).toEqual(['mock1.a.f()']);
       expect(tinfo(mock1.a.f).callLog).toEqual(['mock1.a.f()']);
       expect(tinfo(mock1.fff).callLog).toEqual(['mock1.fff()', 'mock1.fff(7)', 'mock1.fff(mock1.fff(7))']);
+    });
+
+    test('should return call log for when argument is a spy', () => {
+      // ARRANGE
+      const mock = tmock([{
+        f1: function f() {},
+        prop: {
+          f2: function f() {},
+        },
+        f3: jest.fn(),
+      }]);
+
+      function sut(arg1) {
+        arg1.f1();
+        arg1.f1();
+        arg1.prop.f2();
+        arg1.f3();
+      }
+
+      sut(mock);
+
+      // ACT + ASSERT
+      expect(tinfo(mock.f1).callLog).toEqual(['mock.f1()', 'mock.f1()']);
+      expect(tinfo(mock.prop.f2).callLog).toEqual(['mock.prop.f2()']);
+      expect(tinfo(mock.f3).callLog).toEqual(['mock.f3()']);
     });
   });
 });
