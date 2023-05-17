@@ -78,7 +78,7 @@ describe('-------------------- tglobalopt ----------------------', () => {
 
     // ASSERT
     const expectedGlobalOpt: TmockGlobalOptions = {
-      defaultMockName: 'mock',
+      defaultMockName: '<mock>',
       simplificationThreshold: 40,
       simplifiedOutput: true,
       automock: true,
@@ -115,10 +115,10 @@ describe('-------------------- tglobalopt ----------------------', () => {
   });
 
   test.each([
-    [ false, function f() {}, 'mock(<function>)'],
-    [ false, new Function(), 'mock(<function>)'],
-    [ true, function f() {}, 'mock(<function f>)'],
-    [ true, new Function(), 'mock(<function anonymous>)'],
+    [ false, function f() {}, '<mock>(<function>)'],
+    [ false, new Function(), '<mock>(<function>)'],
+    [ true, function f() {}, '<mock>(<function f>)'],
+    [ true, new Function(), '<mock>(<function anonymous>)'],
   ])('should output function names when exposeFunctionNames is set to true %#', (exposeFunctionNames, func, expectedUnmocked) => {
     // ARRANGE
     tglobalopt({ exposeFunctionNames: exposeFunctionNames });
@@ -148,12 +148,12 @@ describe('-------------------- tglobalopt ----------------------', () => {
 
     // ASSERT
     expect(tunmock(res)).toEqual({
-      a: 'value from mock.a',
-      b: 'value from mock.f(mock.g()).a',
-      c: 'value from mock.f(<unnamed mock>)',
-      d: 'value from mock.f(a)',
-      e: 'value from mock',
-      f: 'value from <unnamed mock>',
+      a: 'value from <mock>.a',
+      b: 'value from <mock>.f(<mock>.g()).a',
+      c: 'value from <mock>.f(<unnamed mock>)',
+      d: 'value from <mock>.f(a)',
+      e: 'value from <mock>',
+      f: 'value from <mock>',
     });
   });
 });
@@ -321,13 +321,13 @@ describe('----------------------- tmock options ------------------------', () =>
 
   describe('simplifiedOutput and simplificationThreshold', () => {
     test.each([
-      [1, 'mock(1)', 'mock(1)'],
-      [{}, 'mock({})', 'mock({...})'],
-      [{ '0': 7 }, 'mock({0: 7})', 'mock({...})'],
-      [{ a: '7', b: 0 }, `mock({a: '7', b: 0})`, 'mock({...})'],
-      [[], 'mock([])', 'mock([...])'],
-      [[1], 'mock([1])', 'mock([...])'],
-      [[`1`, true, {}], `mock(['1', true, {}])`, 'mock([...])'],
+      [1, '<mock>(1)', '<mock>(1)'],
+      [{}, '<mock>({})', '<mock>({...})'],
+      [{ '0': 7 }, '<mock>({0: 7})', '<mock>({...})'],
+      [{ a: '7', b: 0 }, `<mock>({a: '7', b: 0})`, '<mock>({...})'],
+      [[], '<mock>([])', '<mock>([...])'],
+      [[1], '<mock>([1])', '<mock>([...])'],
+      [[`1`, true, {}], `<mock>(['1', true, {}])`, '<mock>([...])'],
     ])('should simplify output %#', (arg, expectedResult, expectedResultSimplified) => {
       // ARRANGE
       const mock = tm.mock({ simplifiedOutput: false });
@@ -344,7 +344,7 @@ describe('----------------------- tmock options ------------------------', () =>
 
     test('should simplify arguments-mocks when stringified mock length exceeds simplification threshold when threshold is zero', () => {
       // ARRANGE
-      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 0 });
+      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 0, defaultMockName: 'mock' });
       const mock = tmock();
       const mockNameLength0 = tmock('');
       const mockNameLength1 = tmock('m');
@@ -356,7 +356,7 @@ describe('----------------------- tmock options ------------------------', () =>
 
     test('should simplify arguments-mocks when stringified mock length exceeds simplification threshold when threshold is positive', () => {
       // ARRANGE
-      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 10 });
+      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 10, defaultMockName: 'mock' });
       const mock = tmock();
 
       // ACT + ASSERT
@@ -391,7 +391,7 @@ describe('----------------------- tmock options ------------------------', () =>
     const result = tunmock(mock());
 
     // ASSERT
-    expect(result).toBe('value from mock()');
+    expect(result).toBe('value from <mock>()');
   });
 });
 
@@ -737,10 +737,10 @@ describe('-------------------- tunmock ---------------------', () => {
   });
 
   test.each([
-    [new Function(), 'mock(<function>)'],
-    [() => undefined, 'mock(<arrow function>)'],
-    [function () { return null; }, 'mock(<function>)'],
-    [function f() { return null; }, 'mock(<function>)'],
+    [new Function(), '<mock>(<function>)'],
+    [() => undefined, '<mock>(<arrow function>)'],
+    [function () { return null; }, '<mock>(<function>)'],
+    [function f() { return null; }, '<mock>(<function>)'],
   ])('should unmock functions passed to mock functions as arguments %#', (functionPasseToMock, expectedResult) => {
     // ARRANGE
     const mock = tmock();
@@ -773,7 +773,7 @@ describe('-------------------- tunmock ---------------------', () => {
       prop: {
         prop: {
           prop: 'value',
-          prop1: 'mock',
+          prop1: '<mock>',
           prop2: 'prop assigned by sut',
         },
       },
@@ -805,7 +805,7 @@ describe('-------------------- tunmock ---------------------', () => {
       prop: [
         1,
         [3],
-        'mock',
+        '<mock>',
         { a: 1 },
         undefined,
         null,
@@ -872,7 +872,7 @@ describe('-------------------- tunmock ---------------------', () => {
     // ASSERT
     expect(res).toEqual({
       o: {
-        a: 'mock',
+        a: '<mock>',
       },
       b: 7,
     });
@@ -894,7 +894,7 @@ describe('-------------------- tunmock ---------------------', () => {
 
     // ASSERT
     expect(res).toEqual({
-      a: 'mock',
+      a: '<mock>',
     });
   });
 
@@ -1114,7 +1114,7 @@ describe('-------------------- tset ---------------------', () => {
     const res = tunmock(mock);
     expect(res.f()).toBe(undefined);
     expect(res.f('a')).toBe(1);
-    expect(res.f('b')).toBe(`mock.f('b')`);
+    expect(res.f('b')).toBe(`<mock>.f('b')`);
   });
 
   test('should mock call result per set of call arguments', () => {
@@ -1308,17 +1308,17 @@ describe('------------------- treset --------------------', () => {
       added: 'value',
       a: {
         aa: {
-          aaa: 'mock.a.aa.aaa',
-          aaa1: 'mock.a.aa.aaa1',
+          aaa: '<mock>.a.aa.aaa',
+          aaa1: '<mock>.a.aa.aaa1',
         },
         aa1: {
-          aaa: 'mock.a.aa1.aaa',
+          aaa: '<mock>.a.aa1.aaa',
         },
         e: 9,
       },
-      b: 'mock.b',
+      b: '<mock>.b',
       c: {
-        c: 'mock.c.c',
+        c: '<mock>.c.c',
       },
     });
 
@@ -1329,15 +1329,15 @@ describe('------------------- treset --------------------', () => {
       replaced: false,
       added: 'value',
       a: {
-        aa: 'mock.a.aa',
+        aa: '<mock>.a.aa',
         aa1: {
-          aaa: 'mock.a.aa1.aaa',
+          aaa: '<mock>.a.aa1.aaa',
         },
         e: 9,
       },
-      b: 'mock.b',
+      b: '<mock>.b',
       c: {
-        c: 'mock.c.c',
+        c: '<mock>.c.c',
       },
     });
 
@@ -1347,10 +1347,10 @@ describe('------------------- treset --------------------', () => {
       untouched: 7,
       replaced: false,
       added: 'value',
-      a: 'mock.a',
-      b: 'mock.b',
+      a: '<mock>.a',
+      b: '<mock>.b',
       c: {
-        c: 'mock.c.c',
+        c: '<mock>.c.c',
       },
     });
 
@@ -1532,10 +1532,10 @@ describe('------------------- treset --------------------', () => {
     const res2 = tunmock(mock2);
     expect(res1).toEqual({
       a: 1,
-      aaa: 'mock.aaa',
+      aaa: '<mock>.aaa',
     });
     expect(res2).toEqual({
-      bbb: 'mock.bbb',
+      bbb: '<mock>.bbb',
     });
   });
 });
@@ -1678,9 +1678,9 @@ describe('----------------- tinfo ------------------', () => {
       sut(mock);
 
       // ACT + ASSERT
-      expect(tinfo(mock.f1).callLog).toEqual(['mock.f1()', 'mock.f1()']);
-      expect(tinfo(mock.prop.f2).callLog).toEqual(['mock.prop.f2()']);
-      expect(tinfo(mock.f3).callLog).toEqual(['mock.f3()']);
+      expect(tinfo(mock.f1).callLog).toEqual(['<mock>.f1()', '<mock>.f1()']);
+      expect(tinfo(mock.prop.f2).callLog).toEqual(['<mock>.prop.f2()']);
+      expect(tinfo(mock.f3).callLog).toEqual(['<mock>.f3()']);
     });
   });
 
@@ -1700,10 +1700,10 @@ describe('----------------- tinfo ------------------', () => {
         [1],
         [1, 2, 3],
         [],
-        ['mock()', true, false],
+        ['<mock>()', true, false],
       ]);
       expect(tinfo(mock.a.b.g).calls).toEqual([
-        ['mock()', true, false],
+        ['<mock>()', true, false],
       ]);
     });
 
@@ -1728,7 +1728,7 @@ describe('----------------- tinfo ------------------', () => {
 
       // ACT + ASSERT
       expect(tinfo(mock.f1).calls[0]).toEqual([true]);
-      expect(tinfo(mock.f1).calls[1]).toEqual([undefined, 1, 's', 'mock.a.b.c.f()']);
+      expect(tinfo(mock.f1).calls[1]).toEqual([undefined, 1, 's', '<mock>.a.b.c.f()']);
       expect(tinfo(mock.prop.f2).calls[0]).toEqual([null]);
       expect(tinfo(mock.f3).calls[0]).toEqual([]);
     });
@@ -1793,6 +1793,6 @@ describe ('---------------- test with js -----------------', () => {
     const res = `${tmock()}`;
 
     // ASSERT
-    expect(res).toBe('mock');
+    expect(res).toBe('<mock>');
   });
 });

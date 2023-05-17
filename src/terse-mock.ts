@@ -579,7 +579,7 @@ class MockTree {
     if (node.hasValue()) {
       let value = node.getValue();
       if (node.isTemp()) {
-        value = options.autoValuesPrefix + (value || '<unnamed mock>');
+        value = options.autoValuesPrefix + (value || '<mock>');
       }
       return new Undefinable(value);
     }
@@ -708,7 +708,7 @@ let globalOptions: TmockGlobalOptions = {
   automock: true,
   simplificationThreshold: 40,
   simplifiedOutput: true,
-  defaultMockName: 'mock',
+  defaultMockName: '<mock>',
   quoteSymbol: '\'',
   exposeFunctionNames: false,
   autoValuesPrefix: '',
