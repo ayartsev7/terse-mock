@@ -256,7 +256,7 @@ type TmockFullOptions = TmockGlobalOptions & TmockOptions;
 
 export type MockInfo = {
   externalMock: any;
-  calls: CallInfo[];
+  calls: any[];
   callLog: string[];
 }
 
@@ -641,7 +641,7 @@ export function tinfo(mockOrSpy?: any): MockInfo {
   if (!mockOrSpy) {
     return {
       externalMock: undefined,
-      calls: [],
+      calls: totalCallLog.map((call) => tunmock(call.args)),
       callLog: totalCallLog.map((call) => call.pathBuilder.pathToBeShown),
     }
   }
@@ -651,14 +651,16 @@ export function tinfo(mockOrSpy?: any): MockInfo {
   const pathBuilder = mockOrSpy[PATHBUILDER];
   return {
     externalMock: mockOrSpy[EXTERNAL_MOCK],
-    calls: [],
-    callLog: !pathBuilder ? [] : totalCallLog
-      .filter((call) => call.pathBuilder.groupId === pathBuilder.groupId && call.pathBuilder.path.startsWith(pathBuilder.path))
-      .map((call) => call.pathBuilder.pathToBeShown),
+    calls: fillterByPath().map((call) => tunmock(call.args)),
+    callLog: fillterByPath().map((call) => call.pathBuilder.pathToBeShown),
   };
+
+  function fillterByPath() {
+    return totalCallLog.filter((call) => call.pathBuilder.groupId === pathBuilder.groupId && call.pathBuilder.path.startsWith(pathBuilder.path));
+  }
 }
 
-export function treset(mock?: any) { // TODO: this function should not reset data setup by tmock/tset!
+export function treset(mock?: any) {
   if (mock) {
     mock(RESET_MOCK_PROXY);
     return;
@@ -854,13 +856,17 @@ function getNodeToReturnValue(tree: MockTree, pathBuilder: PathBuilder, callInfo
   }
   if (callInfo) {
     const pathBuilderAny = pathBuilder.parentPathBuilder.withCall([TM_ANY]);
-    const node = tree.getNode(pathBuilderAny.path); // TODO: reuse code
+    const node = tree.getNode(pathBuilderAny.path);
     if (node?.isFinal()) {
       return node;
     }
   }
 }
 function traversePropOrCall(pathBuilder: PathBuilder, options: TmockGlobalOptions, callInfo?: CallInfo) {
+  if (callInfo) {
+    totalCallLog.push(callInfo);
+  }
+
   const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
   const sutNode = getNodeToReturnValue(sutMockTree, pathBuilder, callInfo);
   if (sutNode) {
@@ -878,9 +884,6 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: TmockGlobalOption
   }
 
   sutMockTree.addChildIfNotExistOrReplaceTemp(new TreeNodeTemp(pathBuilder), pathBuilder, callInfo);
-  if (callInfo) {
-    totalCallLog.push(callInfo);
-  }
 
   return getSutProxy(pathBuilder, options);
 }

@@ -42,8 +42,8 @@ The module mainly contains functions for creating and managing mocks/stubs and g
     <td>removes mocks from data</td>
   </tr>
   <tr style="border-bottom-style:hidden">
-    <td style="color:DarkRed">tcalls</td>
-    <td>returns call history of mock functions</td>
+    <td style="color:DarkRed">tinfo</td>
+    <td>provides information on mock or spy</td>
   </tr>
 </table>
 
@@ -189,32 +189,32 @@ Generic form of `tmock`/`tstub` is available if one wants to use benefits like s
 
 ![Static type checking and code completion](../media/static-type-check.jpg?raw=true)
 ## Call history
-The module keeps mocked functions call history. The test below demonstrates how one could check call order and arguments passed to mocked functions for SUT from [above](#deep-automocking):
+The module keeps history of calling functions from the mock. The test below demonstrates how one can check call order and arguments passed to functions:
 ```javascript
-test('check calls demo', () => {
+test('checking calls demo', () => {
   // ARRANGE
-  const mock = tmock('data', [
-    [m => m.getSomething(true).doSomething().property, 1],
+  const mock = tmock([
+    [m => m.f1(), 1],
   ]);
 
   // ACT
-  tunmock(sut(mock));
+  mock.f1();
+  mock.prop.f2(mock.a.b.c, false);
+  mock.prop.f2({ b: 'bbb' });
 
   // ASSERT
-  expect(tcalls(mock)).toEqual([ // all calls
-    'data.getSomething(true)',
-    'data.getSomething(true).doSomething()',
-    'data.getSomethingElse("a")',
-    'data.getSomethingElse("b", true)',
+  expect(tinfo().callLog).toEqual([ // log of all calls
+    'mock.f1()',
+    'mock.prop.f2(mock.a.b.c, false)',
+    'mock.prop.f2({...})',
   ]);
-  expect(tcalls(mock.getSomethingElse)).toEqual([ // calls to getSomethingElse
-    'data.getSomethingElse("a")',
-    'data.getSomethingElse("b", true)',
-  ]);
+  expect(tinfo(mock.prop.f2).calls[1][0]).toEqual({ // examine arguments of a particular call
+    b: 'bbb',
+  });
 });
 ```
 ## Automatic spies
-The module automatically creates spies for functions from mock return values added by `tmock` and `tset` (except functions from return values of other functions). Calls to spied functions get to result of `tcalls` and can be analyzed with `tinfo`.
+The module automatically creates spies for functions from mock return values added by `tmock` and `tset` (except functions from return values of other functions). Calls to spied functions get to call log and can be analyzed with `tinfo`.
 ```javascript
 test('automatic spies demo', () => {
   // ARRANGE
@@ -230,12 +230,11 @@ test('automatic spies demo', () => {
   // ASSERT
   expect(mock.obj.nestedObj.f(7)).toBe(false);
   expect(mock.obj.nestedObj.f(8)).toBe(true);
-  expect(tcalls(mock)).toEqual([
+  expect(tinfo(mock).callLog).toEqual([
     'mock.obj.nestedObj.f(7)',
-    'mock.obj.nestedObj.f(8)'
+    'mock.obj.nestedObj.f(8)',
   ])
-});
-```
+});```
 ## Using external mocks
 terse-mock can use external mocks to analyze calls to mocked functions. To do so one need to create adapter for external mock by implementing `IExternalMock` interface provided by the module and pass the adapter to `tmock`. The test demonstrates how to use Jest mocks for call analyzing:
 ```javascript
@@ -275,11 +274,23 @@ test('can use external mock as return value', () => {
 terse-mock mocks can be used as return values from [Jest module factory for jest.mock()](https://jestjs.io/docs/es6-class-mocks#calling-jestmock-with-the-module-factory-parameter)  
 Please note that the example below uses an [alternative way](#alternative-way-of-setting-mock-values) of setting mock values, as it is well suited for such cases.
 ```javascript
-import { tmock } from '../src/terse-mock';
-jest.mock('some-module', () => tmock('some-module');
-jest.mock('some-other-module', () => tmock('some-other-module', [{
+jest.mock('some-module', () => tmock('some-module', [{
   someFunction: () => 'some value',
 }]));
+```
+Another example with expectation on mocked module function calls:
+```javascript
+jest.mock('./module', () => tmock());
+import { someFunction } from './module';
+import { sut } from './sut-that-uses-module';
+
+test('should call someFunction', () => {
+  // ACT
+  sut();
+
+  // ASSERT
+  expect(tinfo(someFunction).calls.length > 0).toBe(true);
+});
 ```
 ## Resetting mocks
 Mock or any of its part can be reset by `treset`. That means that all mock touches, mock calls and mock values setup outside `tmock` and `tset` are cleared out from mock while values setup by `tmock` and `tset` persist. Calling `treset` with mock argument will also reset all nested mocks passed to `tmock` and `tset` as return values for this mock.
@@ -378,28 +389,32 @@ test('nested mocks demo', () => {
   });
 ```
 ### Call history display options
-By default `tcalls` uses simplified output - it does not expose the contents of objects and arrays in called functions arguments. If you need to see the contents of objects and arrays, you can use the `simplifiedOutputEnabled` option, which can be set both globally and for a specific mock.
+By default module machinery shorten string representation of mock touches - it collapses the contents of objects, arrays and long mocks in called functions arguments. If you need to see the contents of objects and arrays, you can use the `simplifiedOutput` option, which can be set both globally and for a specific mock.
 ```javascript
 test('simplified output enabled/disabled demo', () => {
   // ARRANGE
-  const mockSimplified = tmock();
-  const mock = tmock({ simplifiedOutputEnabled: false });
+  const mockSimplified = tmock({simplifiedOutput: true });
+  const mock = tmock({ simplifiedOutput: false });
 
   // ACT
-  mockSimplified.f(
+  const simplifiedResult = mockSimplified.f(
     1,
-    { a: 1, b: 2, c: 3 },
+    tmock().f('long enough string to make mock shorten in output'),
+    { a: 1 },
     [1, 2, 3]
   );
-  mock.f(
+  const result = mock.f(
     1,
-    { a: 1, b: 2, c: 3 },
+    tmock().f('long enough string to make mock shorten in output'),
+    { a: 1 },
     [1, 2, 3],
   );
 
   // ASSERT
-  expect(tcalls(mockSimplified)[0]).toBe('mock.f(1, {...}, [...])');
-  expect(tcalls(mock)[0]).toBe('mock.f(1, {a: 1, b: 2, c: 3}, [1, 2, 3])');
+  expect(tunmock(simplifiedResult)).toBe(
+    'mock.f(1, <...>, {...}, [...])');
+  expect(tunmock(result)).toBe(
+    `mock.f(1, mock.f('long enough string to make mock shorten in output'), {a: 1}, [1, 2, 3])`);
 });
 ```
 ### Global module options
