@@ -912,7 +912,7 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
           const externalMock = options.externalMock.create();
           node.applyCallsToFuntion(externalMock);
           return externalMock;
-        case Symbol.toPrimitive: return target as any; // Prevent from 'TypeError: Cannot convert object to primitive value'.
+        case Symbol.toPrimitive: return () => pathBuilder.pathToBeShown; // Prevent from 'TypeError: Cannot convert object to primitive value'.
       }
 
       return traversePropOrCall(pathBuilder.withProp(prop), options);

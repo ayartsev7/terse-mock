@@ -12,6 +12,6 @@ test('should work as jest.mock argument that setup predefined return values', ()
   expect(res).toEqual({
     a: 'module-mocked.function1()',
     b: '777',
-    c: 'undefined777',
+    c: 'module-mocked.function1()777',
   });
 });

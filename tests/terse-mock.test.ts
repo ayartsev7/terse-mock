@@ -1787,4 +1787,12 @@ describe ('---------------- test with js -----------------', () => {
     expect(res.aaa).toBe(1);
     expect(res.bbb).toBe(NaN);
   });
+
+  test('use case: to primitive', () => {
+    // ACT
+    const res = `${tmock()}`;
+
+    // ASSERT
+    expect(res).toBe('mock');
+  });
 });
