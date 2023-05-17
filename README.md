@@ -87,7 +87,7 @@ Unmocking is required to turn result into plain js type before checking expectat
 ## Deep automocking
 By default mocks allows to access properties and call functions at any nesting level without first initializing the return values.
 
-Suppose we have [SUT](https://en.wikipedia.org/wiki/System_under_test):
+Suppose we have a [SUT](https://en.wikipedia.org/wiki/System_under_test):
 ```javascript
 function sut(data) {
   const r1 = data.getSomething(true).doSomething();
@@ -272,7 +272,7 @@ test('can use external mock as return value', () => {
 ```
 ## Module mocks
 terse-mock mocks can be used as return values from [Jest module factory for jest.mock()](https://jestjs.io/docs/es6-class-mocks#calling-jestmock-with-the-module-factory-parameter)  
-Please note that the example below uses an [alternative way](#alternative-way-of-setting-mock-values) of setting mock values, as it is well suited for such cases.
+Please note that the example below uses the [alternative way](#alternative-way-of-setting-mock-values) of setting mock values, as it is well suited for such cases.
 ```javascript
 jest.mock('some-module', () => tmock('some-module', [{
   someFunction: () => 'some value',
