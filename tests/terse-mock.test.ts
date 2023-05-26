@@ -549,6 +549,29 @@ describe('-------------------- mock behavior ----------------------', () => {
     // ASSERT
     expect(res).toEqual([]);
   });
+
+  test('should unmock mocks in arguments passed to spies', () => {
+    // ARRANGE
+    const mock = tmock([{
+      f1: jest.fn((arg) => arg),
+    }], { externalMock: jestMock });
+
+    // ACT
+    const result = mock.f1(mock);
+    mock.f2(mock);
+    mock.f3({ prop: mock }, [mock]);
+
+    // ASSERT
+    expect(result).toEqual({ f1: expect.anything() });
+    expect(mock.f1).toBeCalledWith({ f1: expect.anything() });
+    const unmockedUfterAllTouches = {
+      f1: expect.anything(),
+      f2: expect.anything(),
+      f3: expect.anything(),
+    };
+    expect(tinfo(mock.f2).externalMock).toBeCalledWith(unmockedUfterAllTouches);
+    expect(tinfo(mock.f3).externalMock).toBeCalledWith({ prop: unmockedUfterAllTouches }, [unmockedUfterAllTouches]);
+  });
 });
 
 describe('-------------------- tstub ----------------------', () => {
@@ -1749,6 +1772,22 @@ describe('----------------- tinfo ------------------', () => {
         [],
         [1],
       ]);
+    });
+
+    test('should return unmocked argument-mock passed to spy for both .calls and .externalMock.mock.calls', () => {
+      // ARRANGE
+      const mock = tmock([{
+        f: jest.fn(),
+      }], { externalMock: jestMock });
+      const mockPassedToSpy = tmock('mock passed to spy');
+      mockPassedToSpy.a = 7;
+
+      // ACT
+      mock.f(mockPassedToSpy);
+
+      // ASSERT
+      expect(tinfo(mock.f).calls[0][0]).toEqual({ a: 7 });
+      expect(tinfo(mock.f).externalMock.mock.calls[0][0]).toEqual({ a: 7 });
     });
   });
 });

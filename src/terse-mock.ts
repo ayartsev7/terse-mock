@@ -138,6 +138,7 @@ function deepClone(source: any) {
   // }
   return source;
 }
+
 function deepCloneAndSpyify(_source: any, _pathBuilder: PathBuilder, _externalMock?: IExternalMock, _thisArg = null) {
   const visitedObjects: any[] = [];
   return deepCloneAndSpyifyInternal(_source, _pathBuilder, _externalMock, _thisArg);
@@ -192,7 +193,7 @@ function shallowMergeFromTo(from: Object, to: Object, mapper: PropMapperType = (
   }
 }
 
-const defaultProxyTarget = () => undefined;
+const defaultProxyTarget = new Function();
 
 export interface IExternalMock {
   create: () => any;
@@ -215,11 +216,13 @@ function createMockFunction(thisArg: any, defaultReturnSetter: (context: MockFun
 
 function createSpy(pathBuilder: PathBuilder, originalFunction: any, externalMock?: IExternalMock) {
   const spy = function () {
-    totalCallLog.push(new CallInfo(null, [...arguments], pathBuilder.withCall([...arguments])));
+    const args = [...arguments];
+    const unmockedArgs = tunmock(args);
+    totalCallLog.push(new CallInfo(null, args, pathBuilder.withCall(args)));
     if (externalMock) {
-      spy[EXTERNAL_MOCK](...arguments);
+      spy[EXTERNAL_MOCK](...unmockedArgs);
     }
-    return originalFunction(...arguments);
+    return originalFunction(...unmockedArgs);
   };
   shallowMergeFromTo(originalFunction, spy);
   if (externalMock) {
@@ -443,7 +446,8 @@ class MockTreeNode {
   }
 
   applyCallsToFuntion(f: Function) {
-    this.calls_.forEach((callInfo) => f.apply(callInfo.this, callInfo.args));
+    this.calls_.forEach((callInfo) =>
+      f.apply(callInfo.this, tunmock(callInfo.args)));
   }
 
   hasValue() {
