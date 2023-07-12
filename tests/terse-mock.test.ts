@@ -1,5 +1,5 @@
 ﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tglobalopt, IExternalMock, InitCouple, AnyInitializer,
-  TmockGlobalOptions, tstub, TmockOptions,
+  TmockGlobalOptions, tstub, TmockInstanceOptions,
 } from '../src/terse-mock';
 
 const jestMock: IExternalMock = {
@@ -41,7 +41,7 @@ objectWithTestSymbolProperty[testSymbol] = DFAULT_NUMERIC_VALUE;
 const objectWithoutPrototypeWithProperty = Object.create(null);
 objectWithoutPrototypeWithProperty.a = DFAULT_NUMERIC_VALUE;
 
-const OBJECTS_AND_ARRAYS = [
+const OBJECTS_CLASSES_ARRAYS = [
   objectWithTestSymbolProperty,
   Object.create(null),
   objectWithoutPrototypeWithProperty,
@@ -216,7 +216,7 @@ describe('----------------------- tmock arguments ------------------------', () 
   test('should accept options as first or second or third argument', () => {
     // ARRANGE
     expect(tglobalopt().automock).toBe(true);
-    const options: TmockOptions = { automock : false };
+    const options: TmockInstanceOptions = { automock : false };
 
     // ACT
     const mock1 = tmock(options);
@@ -418,7 +418,7 @@ describe('-------------------- mock behavior ----------------------', () => {
 
   test.each([
     ...SCALARS,
-    ...OBJECTS_AND_ARRAYS,
+    ...OBJECTS_CLASSES_ARRAYS,
   ])('should return predefined scalars, objects and arrays %#', (initialStub) => {
     // ARRANGE
     const mock = tm.mock([{ a: initialStub }]);
@@ -460,7 +460,7 @@ describe('-------------------- mock behavior ----------------------', () => {
 
   test.each([
     ...SCALARS,
-    ...OBJECTS_AND_ARRAYS,
+    ...OBJECTS_CLASSES_ARRAYS,
     ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE,
     jest.fn(),
   ])('should preserve assigned values as is', (val) => {
@@ -608,10 +608,10 @@ describe('-------------------- tstub ----------------------', () => {
 
   test.each([
     ...SCALARS,
-    ...OBJECTS_AND_ARRAYS,
+    ...OBJECTS_CLASSES_ARRAYS,
     ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE,
     jest.fn(),
-  ])('should replace values', (originalValue) => {
+  ])('should replace old stub values with new ones %#', (originalValue) => {
     // ACT
     const stub = tm.stub([
       {
@@ -638,7 +638,7 @@ describe('-------------------- tstub ----------------------', () => {
     expect(stub.a).toEqual({ aa: 'aa' });
   });
 
-  test('should replece all prior setups', () => {
+  test('should replece value constructed by multiple setups with new value', () => {
     // ACT
     const stub = tm.stub([
       [(s) => s.a.aa, {} ],
@@ -651,11 +651,17 @@ describe('-------------------- tstub ----------------------', () => {
     expect(stub.a).toBe('aa');
   });
 
-  test('should merge to objects', () => {
+  test('should complement object through successive setups', () => {
     // ACT
     const stub = tm.stub([
       {
-        a: { aa: 1, bb: 3, cc: { ccc: 5 }},
+        a: {
+          aa: 1,
+          bb: 3,
+          cc: {
+            ccc: 5,
+          },
+        },
         b: Object.create(null),
       },
       [(s) => s.a.cc.ddd, 7],
@@ -681,30 +687,61 @@ describe('-------------------- tstub ----------------------', () => {
     });
   });
 
-  test('should combine return values of functions in stub', () => {
+  test('should return values defined per sets of arguments', () => {
     // ACT
     const stub = tm.stub([
-      [(s) => s.f(1), 5],
-      [(s) => s.f(3), 7],
-      [(s) => s.g(1, 3), 'bbb'],
-      [(s) => s.g(TM_ANY), 'aaa'],
+      [(s) => s.f(), 1],
+      [(s) => s.f(1), 3],
+      [(s) => s.f(1, 3), 5],
     ]);
 
     // ASSERT
-    expect(stub.f(1)).toBe(5);
-    expect(stub.f(3)).toBe(7);
-    expect(stub.f()).toBe(undefined);
-
-    expect(stub.g(1, 3)).toBe('bbb');
-    expect(stub.g(1)).toBe('aaa');
+    expect(stub.f()).toBe(1);
+    expect(stub.f(1)).toBe(3);
+    expect(stub.f(1, 3)).toBe(5);
   });
 
-  test('should merge return values and properties of functions in stub', () => {
+  test('should return value defined for TM_ANY for set of arguments not mapped to return value', () => {
+    // ACT
+    // expect(mock.f(3)).toBe('333');
+    // expect(mock.f(5)).toBe('555');
+    // expect(mock.f(tm.ANY.toString())).toBe('777');
+    // expect(mock.f()).toBe('aaa');
+    // expect(mock.f(777)).toBe('aaa');
+    // expect(mock.f(3, 5)).toBe('aaa');
+
+    const stub = tm.stub([
+      [s => s.f(1, 3), 1],
+      [s => s.f(tm.ANY.toString()), 3],
+      [s => s.f(TM_ANY), 5],
+    ]);
+
+    // ASSERT
+    expect(stub.f(1, 3)).toBe(1);
+    expect(stub.f(tm.ANY.toString())).toBe(3);
+    expect(stub.f()).toBe(5);
+    expect(stub.f(1)).toBe(5);
+    expect(stub.f(tm.ANY)).toBe(5);
+  });
+
+  test('should return undefined when neither set of arguments mapped to return value nor value for TM_ANY is provided', () => {
+    // ACT
+    const stub = tm.stub([
+      [(s) => s.f(), 1],
+    ]);
+
+    // ASSERT
+    expect(stub.f()).toBe(1);
+    expect(stub.f(1)).toBeUndefined();
+  });
+
+  test('should complement return values and function properties through successive setups', () => {
     // ACT
     const stub = tm.stub([
       [(s) => s.f.prop1, '1'],
       [(s) => s.f(1), { b: 3 }],
-      [(s) => s.f(1).a.bb, 5],
+      [(s) => s.f(1).a.aa.aaa1, 5],
+      [(s) => s.f(1).a.aa.aaa2, 7],
       [(s) => s.f.prop2, null],
 
       [(s) => s.f1, function () { return 1; }],
@@ -715,7 +752,10 @@ describe('-------------------- tstub ----------------------', () => {
     // ASSERT
     expect(stub.f(1)).toEqual({
       a: {
-        bb: 5,
+        aa: {
+          aaa1: 5,
+          aaa2: 7,
+        },
       },
       b: 3,
     });
@@ -736,9 +776,31 @@ describe('-------------------- tstub ----------------------', () => {
     expect(stub()).toBe(1);
   });
 
-  test('should throw error when trying to replace stub at root level', () => {
+  test('should be able to replace root', () => {
+    // ACT
+    const stub = tstub([s => s, 1]);
+
     // ASSERT
-    expect(() => tm.stub([(s) => s, 1])).toThrowError('Cannot replace stab root');
+    expect(stub).toBe(1);
+  });
+
+  test('should use last root replacement after serie of root replacements', () => {
+    // ACT
+    const stub = tstub([
+      [s => s, 1],
+      // First root replacement.
+      [s => s, { a: 1 }],
+      [s => s.b, 3],
+      // Second root replacement.
+      [s => s, { c: 5 }],
+      [s => s.d, 7],
+    ]);
+
+    // ASSERT
+    expect(stub).toEqual({
+      c: 5,
+      d: 7,
+    });
   });
 });
 
@@ -880,6 +942,22 @@ describe('-------------------- tunmock ---------------------', () => {
     //expect(res.g[s]).toBe('3'); // TODO: support symbols
   });
 
+  test('unmocked function should return predefined values for known arguments, otherwise automock value', () => {
+    // ARRANGE
+    const mock = tmock();
+    tset(mock, [(m) => m.f('a'), 1]);
+
+    // ACT
+    mock.f('a');
+    mock.f('b');
+
+    // ASSERT
+    const res = tunmock(mock);
+    expect(res.f()).toBe(undefined);
+    expect(res.f('a')).toBe(1);
+    expect(res.f('b')).toBe(`<mock>.f('b')`);
+  });
+
   test('should unmock objects recursively', () => {
     // ARRANGE
     const mock = tmock([
@@ -976,7 +1054,7 @@ describe('-------------------- tset ---------------------', () => {
 
   test.each([
     ...SCALARS,
-    ...OBJECTS_AND_ARRAYS,
+    ...OBJECTS_CLASSES_ARRAYS,
     new RegExp(''),
   ])('should return mock values for scalars, objects, arrays and classes', (value) => {
     // ARRANGE
@@ -1124,22 +1202,6 @@ describe('-------------------- tset ---------------------', () => {
     expect(mock.f(3, 5)).toBe('aaa');
   });
 
-  test('mocked function should return predefined values for particular arguments, otherwise automock value', () => {
-    // ARRANGE
-    const mock = tmock();
-    tset(mock, [(m) => m.f('a'), 1]);
-
-    // ACT
-    mock.f('a');
-    mock.f('b');
-
-    // ASSERT
-    const res = tunmock(mock);
-    expect(res.f()).toBe(undefined);
-    expect(res.f('a')).toBe(1);
-    expect(res.f('b')).toBe(`<mock>.f('b')`);
-  });
-
   test('should mock call result per set of call arguments', () => {
     // ARRANGE
     const mock = tm.mock();
@@ -1237,6 +1299,40 @@ describe('-------------------- tset ---------------------', () => {
 
     // ACT + ASSERT
     expect(() => tset(mock, [(m) => m.prop, child])).not.toThrowError();
+  });
+
+  test.each([
+    ...OBJECTS_CLASSES_ARRAYS,
+    ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE,
+  ])('should accept stubs produced by tstub %#', (stubRootReplacement) => {
+    // ARRANGE
+    const stub = tm.stub([s => s, stubRootReplacement]);
+
+    // ACT + ASSERT
+    expect(() => tset(stub, [s => s.prop, 'val'])).not.toThrow();
+  });
+
+  test('should not be able to replace stub root', () => {
+    // ARRANGE
+    const stub = tstub({});
+
+    // ACT + ASSERT
+    expect(() => tset(stub, [s => s, 1])).toThrowError('tset: cannot replace stub root');
+    expect(() => tset(stub, [s => s(), 1])).toThrowError('tset: cannot replace stub root');
+  });
+
+  test.each([
+    undefined,
+    null,
+    '',
+    'a',
+    1,
+    { a: 1 },
+    [1, 2, 3],
+    function f() {},
+  ])('should throw when first argument is neither mock nor stub', (argument) => {
+    // ACT + ASSERT
+    expect(() => tset(argument, [(m) => m, 1])).toThrowError('tset: first argument should be either mock or stub');
   });
 });
 

@@ -6,6 +6,7 @@ const EXTERNAL_MOCK = Symbol('EXTERNAL_MOCK');
 const ARGS_TO_RETURN_VALUES = Symbol('ARGS_TO_RETURN_VALUES');
 const IS_A_MOCK_PROXY = Symbol('IS_A_MOCK_PROXY');
 const IS_A_SPY = Symbol('IS_A_SPY');
+const IS_A_STUB = Symbol('IS_A_STUB');
 const ORIGINAL_FUNCTION = Symbol('ORIGINAL_FUNCTION');
 const IS_A_MOCKED_FUNCTION = Symbol('IS_A_MOCKED_FUNCTION');
 export const TM_ANY = Symbol('TM_ANY');
@@ -97,6 +98,10 @@ function isArray(data) {
 
 function isMockProxy(data: any) {
   return data && data[IS_A_MOCK_PROXY] === true;
+}
+
+function isStub(data: any) {
+  return data && data[IS_A_STUB] === true;
 }
 
 function isSpy(data: any) {
@@ -247,7 +252,7 @@ type TmockBaseOptions = {
   autoValuesPrefix: string;
 }
 
-export type TmockOptions = Partial<TmockBaseOptions>;
+export type TmockInstanceOptions = Partial<TmockBaseOptions>;
 
 export type TmockGlobalOptions = TmockBaseOptions & {
   simplificationThreshold: number;
@@ -255,7 +260,7 @@ export type TmockGlobalOptions = TmockBaseOptions & {
   quoteSymbol: string;
 }
 
-type TmockFullOptions = TmockGlobalOptions & TmockOptions;
+type TmockFullOptions = TmockGlobalOptions & TmockInstanceOptions;
 
 export type MockInfo = {
   externalMock: any;
@@ -296,10 +301,6 @@ type StubInitializationProxyContext = {
   stubReplacement: any;
   pathBuilder: PathBuilder;
 };
-
-type StubWrapper = {
-  stub: any;
-}
 
 type StringDictionary = { [key: string]: string };
 
@@ -344,6 +345,16 @@ class PathBuilder {
 
   public withCall(args: any[]): PathBuilder {
     const latestPathChunk = argsToString(args);
+
+    // let simplifiedOutput;
+    // if (this.options_.simplifiedOutput !== undefined) {
+    //   simplifiedOutput = this.options_.simplifiedOutput;
+    // } else if (localOptions.simplifiedOutput !== undefined) {
+    //   simplifiedOutput = localOptions.simplifiedOutput;
+    // } else {
+    //   simplifiedOutput = globalOptions.simplifiedOutput;
+    // }
+    // const pathToBeShownChunk = !simplifiedOutput ? latestPathChunk : argsToString(args, true);
     const pathToBeShownChunk = !this.options_.simplifiedOutput ? latestPathChunk : argsToString(args, true);
     const newPathBuilder = new PathBuilder(
       this.groupId_,
@@ -606,8 +617,8 @@ let totalCallLog: CallInfo[] = [];
 
 let totalMocksCounter = 0;
 
-const userMockTrees: MockTree[] = [];
-const sutMockTrees: MockTree[] = [];
+const userMockTrees: { [index: string]: MockTree } = {};
+const sutMockTrees: { [index: string]: MockTree } = {};
 
 // This function removes all tm proxies from data.
 export function tunmock(_data) {
@@ -669,15 +680,17 @@ export function treset(mock?: any) {
     mock(RESET_MOCK_PROXY);
     return;
   }
-  sutMockTrees.forEach((mockTree) => mockTree.deleteSubtree());
+  Object.values(sutMockTrees).forEach((mockTree) => mockTree.deleteSubtree());
   totalCallLog = [];
 }
 
-function applyCouplesToStub(stubWrapper: StubWrapper, initCouples: InitCouple[]) {
+function applyCouplesToStub(stub, initCouples: InitCouple[]) {
+  let returnValue = stub;
+
   initCouples.forEach(initCouple => {
     const proxyContext: StubInitializationProxyContext = {
-      stubRef: stubWrapper.stub,
-      prevStubRef: stubWrapper.stub,
+      stubRef: returnValue,
+      prevStubRef: returnValue,
       prevProp: '',
       stubReplacement: undefined,
       pathBuilder: new PathBuilder('', ''),
@@ -691,20 +704,27 @@ function applyCouplesToStub(stubWrapper: StubWrapper, initCouples: InitCouple[])
     if (proxyContext.prevProp) {
       proxyContext.prevStubRef[proxyContext.prevProp] = initCouple[1];
     } else {
-      throw new Error('Cannot replace stab root'); // TODO: why not? allow this?
+      returnValue = initCouple[1];
     }
     if (proxyContext.stubReplacement) {
-      stubWrapper.stub = proxyContext.stubReplacement;
+      returnValue = proxyContext.stubReplacement;
     }
   });
+
+  return returnValue;
 }
 
 export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProxy: T) => any, any] | ([(mockProxy: T) => any, any])[]) {
   const initCouples = (isInitCouple(initCoupleOrCouples) ? [initCoupleOrCouples] : initCoupleOrCouples) as InitCouple[];
   if (isMockProxy(stubWrapperOrMock)) {
     stubWrapperOrMock(SET_MOCK_PROXY_RETURN_VALUES, initCouples);
+  } else if (isStub(stubWrapperOrMock)) {
+    const newStub = applyCouplesToStub(stubWrapperOrMock, initCouples);
+    if (newStub != stubWrapperOrMock) {
+      throw new Error('tset: cannot replace stub root');
+    }
   } else {
-    applyCouplesToStub(stubWrapperOrMock, initCouples);
+    throw new Error('tset: first argument should be either mock or stub');
   }
 }
 
@@ -719,10 +739,9 @@ let globalOptions: TmockGlobalOptions = {
 };
 
 export function tglobalopt(options?: Partial<TmockGlobalOptions>): TmockGlobalOptions {
-  if (!options) {
-    return globalOptions;
+  if (options) {
+    globalOptions = {...globalOptions, ...deepClone(options)};
   }
-  globalOptions = {...globalOptions, ...deepClone(options)};
   return globalOptions;
 }
 
@@ -853,7 +872,7 @@ function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder,
   });
 }
 
-function getNodeToReturnValue(tree: MockTree, pathBuilder: PathBuilder, callInfo?: CallInfo) {
+function getFinalNode(tree: MockTree, pathBuilder: PathBuilder, callInfo?: CallInfo) {
   const node = tree.getNode(pathBuilder.path);
   if (node?.isFinal()) {
     return node;
@@ -866,20 +885,22 @@ function getNodeToReturnValue(tree: MockTree, pathBuilder: PathBuilder, callInfo
     }
   }
 }
+
 function traversePropOrCall(pathBuilder: PathBuilder, options: TmockGlobalOptions, callInfo?: CallInfo) {
   if (callInfo) {
     totalCallLog.push(callInfo);
   }
 
   const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
-  const sutNode = getNodeToReturnValue(sutMockTree, pathBuilder, callInfo);
-  if (sutNode) {
-    return sutNode.getValue();
+  const nodeSetInSut = getFinalNode(sutMockTree, pathBuilder, callInfo);
+  if (nodeSetInSut) {
+    return nodeSetInSut.getValue();
   }
+
   const userMockTree = userMockTrees[pathBuilder.groupId];
-  const userNode = getNodeToReturnValue(userMockTree, pathBuilder, callInfo);
-  if (userNode) {
-    return userNode.getValue();
+  const nodeSetByUser = getFinalNode(userMockTree, pathBuilder, callInfo);
+  if (nodeSetByUser) {
+    return nodeSetByUser.getValue();
   }
 
   if (!options.automock) {
@@ -962,13 +983,13 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
   return sutProxy;
 }
 
-function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitializer[] | TmockOptions,
-  initOrOptionsArg?: InitCouple | AnyInitializer[] | TmockOptions,
-  optionsArg?: TmockOptions)
+function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitializer[] | TmockInstanceOptions,
+  initOrOptionsArg?: InitCouple | AnyInitializer[] | TmockInstanceOptions,
+  optionsArg?: TmockInstanceOptions)
 {
   let name: string | undefined;
   let initializers: AnyInitializer[] | undefined;
-  let options: TmockOptions | undefined;
+  let options: TmockInstanceOptions | undefined;
   const multipleOptionsArgsErrorMessage = 'tmock: multiple options arguments not allowed';
   if (nameOrInitOrOptionsArg !== undefined) {
     if (isString(nameOrInitOrOptionsArg)) {
@@ -976,7 +997,7 @@ function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitia
     } else if (isArray(nameOrInitOrOptionsArg)) {
       initializers = getInitializers(nameOrInitOrOptionsArg);
     } else {
-      options = nameOrInitOrOptionsArg as TmockOptions;
+      options = nameOrInitOrOptionsArg as TmockInstanceOptions;
     }
   }
   if (initOrOptionsArg) {
@@ -989,7 +1010,7 @@ function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitia
       if (options) {
         throw new Error(multipleOptionsArgsErrorMessage);
       }
-      options = initOrOptionsArg as TmockOptions;
+      options = initOrOptionsArg as TmockInstanceOptions;
     }
   }
   if (optionsArg) {
@@ -1007,9 +1028,9 @@ function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitia
 }
 
 export function tmock<T = any>(
-  nameOrSetupOrOptionsArg?: string | InitObjectOrInitCouple<T>[] | TmockOptions,
-  setupOrOptionsArg?: InitObjectOrInitCouple<T>[] | TmockOptions,
-  optionsArg?: TmockOptions): T
+  nameOrSetupOrOptionsArg?: string | InitObjectOrInitCouple<T>[] | TmockInstanceOptions,
+  setupOrOptionsArg?: InitObjectOrInitCouple<T>[] | TmockInstanceOptions,
+  optionsArg?: TmockInstanceOptions): T
 {
   const parsedArgs = parseTmockArgs(nameOrSetupOrOptionsArg, setupOrOptionsArg, optionsArg);
 
@@ -1057,17 +1078,22 @@ export function tstub<T = any>(initializer: InitObjectOrInitCouple<T> | InitObje
   } else {
     initializers = initializer as (InitObject | InitCouple)[];
   }
-  const initCouples: InitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as InitCouple[] | [];
+
   const stubFromInitializer = initializers.find(initializer => isObject(initializer));
-  const stupWrapper: StubWrapper = {
-    stub: deepClone(stubFromInitializer) || {},
-  }
+  let stub = deepClone(stubFromInitializer) ?? {};
 
+  const initCouples: InitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as InitCouple[] | [];
   if (initCouples) {
-    tset(stupWrapper, initCouples);
+    stub = applyCouplesToStub(stub, initCouples);
   }
 
-  return stupWrapper.stub;
+  if (isObjectOrArrayOrClass(stub) || isFunction(stub)) {
+    Object.defineProperty(stub, IS_A_STUB, { // Make stubs identifiable by setting non-enumerable property that is not exposed to user.
+      value: true,
+    });
+  }
+
+  return stub;
 }
 
 export default {
