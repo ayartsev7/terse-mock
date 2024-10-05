@@ -1,3 +1,4 @@
+// TODO: split into files
 const PATHBUILDER = Symbol('PATHBUILDER');
 const MOCK_PROXY_TO_OBJECT = Symbol('MOCK_PROXY_TO_OBJECT');
 const RESET_MOCK_PROXY = Symbol('RESET_MOCK_PROXY');
@@ -20,7 +21,7 @@ function getOrAddObjPropVal(obj: any, prop: ObjectPropertyType, val: any = {}) {
 }
 
 function functionToString(data: any): string {
-//    if (simplify) { // Uncomment this 'if' to get full function text if not simplified.
+//    if (simplify) { // Stringified functions are always simplified now
   const found = String(data).match(/(\S*)\s*\(/);
   if (!found || found[1] === 'function') {
     return '<function>';
@@ -39,17 +40,17 @@ function functionToString(data: any): string {
 //    return String(data);
 }
 
-function collapseIfNeeded(data: string, collapsedData: string, options?: TFullOpt) {
+function collapseIfNeeded(data: string, collapsedData: string, options?: TOpt) {
   if (!options) {
     return data;
   }
-  if (options.simplifiedOutput && data.length > options.simplificationThreshold) {
+  if (options.collapseLongValues && data.length > options.collapseThreshold) {
     return collapsedData;
   }
   return data;
 }
 
-function toString(data: any, options?: TFullOpt) {
+function toString(data: any, options?: TOpt) {
   if (isArray(data)) {
     const dataStr = '[' + data.map((item) => toString(item, options)).join(', ') + ']';
     return collapseIfNeeded(dataStr, '[...]', options);
@@ -129,7 +130,7 @@ function hasSymbol(obj, sym: symbol) {
   return Object.getOwnPropertySymbols(obj).includes(sym);
 }
 
-function argsToString(args: any[], options?: TFullOpt) {
+function argsToString(args: any[], options?: TOpt) {
   return '(' + args.map((arg) => toString(arg, options)).join(', ') + ')';
 }
 
@@ -245,23 +246,16 @@ type MockFunctionContext = {
   argsToReturnValues: { [key: string]: any };
 }
 
-type TBaseOpt = {
+export type TOpt = {
   automock: boolean;
-  simplifiedOutput: boolean; // TODO: rename to collapseLongValues
-  simplificationThreshold: number; // TODO: rename to collapseThreshold
+  collapseLongValues: boolean;
+  collapseThreshold: number;
   externalMock?: IExternalMock;
   exposeFunctionNames: boolean;
   autoValuesPrefix: string;
-}
-
-export type TGlobalOpt = TBaseOpt & {
   defaultMockName: string;
   quoteSymbol: string;
 }
-
-export type TLocalOpt = Partial<TBaseOpt>;
-
-type TFullOpt = TGlobalOpt & TLocalOpt;
 
 export type MockInfo = {
   externalMock: any;
@@ -335,9 +329,9 @@ class PathBuilder {
   private path_: string  = '';
   private latestPathChunk_: ObjectPropertyType  = '';
   private pathToBeShown_ = '';
-  private options_?: TFullOpt;
+  private options_?: TOpt;
 
-  constructor(groupId: string, pathToBeShown: string, options?: TFullOpt) {
+  constructor(groupId: string, pathToBeShown: string, options?: TOpt) {
     this.groupId_ = groupId;
     this.path_ = '';
     this.pathToBeShown_ = pathToBeShown;
@@ -347,7 +341,7 @@ class PathBuilder {
   public withCall(args: any[]): PathBuilder {
     const latestPathChunk = argsToString(args);
 
-    const pathToBeShownChunk = !this.options_?.simplifiedOutput ? latestPathChunk : argsToString(args, this.options_);
+    const pathToBeShownChunk = !this.options_?.collapseLongValues ? latestPathChunk : argsToString(args, this.options_);
     const newPathBuilder = new PathBuilder(
       this.groupId_,
       this.pathToBeShown_ + pathToBeShownChunk,
@@ -577,7 +571,7 @@ class MockTree {
   }
 
   // Convert tree to hierarchy of objects and functions based on node paths and node values.
-  toObject(path: string, options: TFullOpt): Undefinable {
+  toObject(path: string, options: TOpt): Undefinable {
     const node = this.tree[path];
     if (node.hasValue()) {
       let value = node.getValue();
@@ -718,26 +712,26 @@ export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProx
   }
 }
 
-let globalOptions: TGlobalOpt = {
+let globalOptions: TOpt = {
   automock: true,
-  simplifiedOutput: true, // Should this be done by default?
-  simplificationThreshold: 40,
+  collapseLongValues: true, // Should this be done by default?
+  collapseThreshold: 40,
   defaultMockName: '<mock>',
   quoteSymbol: '\'',
   exposeFunctionNames: false,
   autoValuesPrefix: '',
 };
 
-let localOptions: TLocalOpt = {};
+let localOptions: Partial<TOpt> = {};
 
-export function tglobalopt(options?: Partial<TGlobalOpt>): TGlobalOpt {
+export function tglobalopt(options?: Partial<TOpt>): TOpt {
   if (options) {
     globalOptions = {...globalOptions, ...deepClone(options)};
   }
   return globalOptions;
 }
 
-export function tlocalopt(options?: Partial<TGlobalOpt>): TLocalOpt {
+export function tlocalopt(options?: Partial<TOpt>): Partial<TOpt> {
   if (options) {
     localOptions = {...localOptions, ...deepClone(options)};
   }
@@ -833,7 +827,7 @@ function getMockInitializationProxy(proxyContext: MockInitializationProxyContext
   }
 }
 
-function applyCouplesToMock(initCouples: TInitCouple[], pathBuilder: PathBuilder, options: TGlobalOpt) {
+function applyCouplesToMock(initCouples: TInitCouple[], pathBuilder: PathBuilder, options: TOpt) {
   const userMockTree = userMockTrees[pathBuilder.groupId];
   initCouples.forEach(initCouple => {
     const proxyContext: MockInitializationProxyContext = {
@@ -881,7 +875,7 @@ function getFinalNode(tree: MockTree, pathBuilder: PathBuilder, callInfo?: CallI
   }
 }
 
-function traversePropOrCall(pathBuilder: PathBuilder, options: TGlobalOpt, callInfo?: CallInfo) {
+function traversePropOrCall(pathBuilder: PathBuilder, options: TOpt, callInfo?: CallInfo) {
   if (callInfo) {
     totalCallLog.push(callInfo);
   }
@@ -908,7 +902,7 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: TGlobalOpt, callI
   return getSutProxy(pathBuilder, options);
 }
 
-function getSutProxy(pathBuilder: PathBuilder, options: TGlobalOpt) {
+function getSutProxy(pathBuilder: PathBuilder, options: TOpt) {
   const userMockTree: MockTree = userMockTrees[pathBuilder.groupId];
   const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
   const path = pathBuilder.path;
@@ -1015,7 +1009,7 @@ export function tmock<T = void>(
 
   const parsedArgs = parseTmockArgs<T>(nameOrInitializerArg, initializerArg);
 
-  const options: TFullOpt = {
+  const options: TOpt = {
     ...globalOptions,
     ...localOptions,
   };

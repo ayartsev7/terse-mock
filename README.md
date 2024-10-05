@@ -424,13 +424,13 @@ test('nested mocks demo', () => {
 });
 ```
 ### Collapsing long arguments
-By default module machinery shorten string representation of mock touches - it collapses the contents of objects, arrays and long mocks in functions arguments. If you need to see the contents of collapsed data, you can use the `simplifiedOutput` option. Use `simplificationThreshold` option to set the string length threshold after which the data will be collapsed.
+By default module machinery shorten string representation of mock touches - it collapses the contents of objects, arrays and long mocks in functions arguments. If you need to see the contents of collapsed data, you can use the `collapseLongValues` option. Use `collapseThreshold` option to set the string length threshold after which the data will be collapsed.
 ```javascript
-test('simplified output enabled/disabled demo', () => {
+test('collapsed output enabled/disabled demo', () => {
   // ARRANGE
   tlocalopt({
-    simplifiedOutput: true,
-    simplificationThreshold: 6,
+    collapseLongValues: true,
+    collapseThreshold: 6,
   });
 
   // ACT
@@ -448,7 +448,7 @@ test('simplified output enabled/disabled demo', () => {
 });
 ```
 ### Module options
-`tglobalopt` allows to customise module settings e.g. to set default name for mocks or turn simplified output on/of.  
+`tglobalopt` allows to customise module settings e.g. to set default name for mocks or turn automocking on/of.  
 `tlocalopt` allows to override module settings temporarly untill the `treset` is called.
 
 ```javascript

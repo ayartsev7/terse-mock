@@ -1,4 +1,4 @@
-﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tglobalopt, IExternalMock, TGlobalOpt, tstub, TInit, tlocalopt } from '../src/terse-mock';
+﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tglobalopt, IExternalMock, TOpt, tstub, TInit, tlocalopt } from '../src/terse-mock';
 
 const jestMock: IExternalMock = {
   create: () => jest.fn(),
@@ -71,20 +71,15 @@ test('should all exported functions have analogues in tm', () => {
 });
 
 describe('-------------------- tglobalopt ----------------------', () => {
-  test('should accept empty options', () => {
-    // ACT
-    tglobalopt();
-  });
-
-  test('should return all settings', () => {
+  test('should return default options when options have not been changed until now', () => {
     // ACT
     const globalOptions = tglobalopt();
 
     // ASSERT
-    const expectedGlobalOpt: TGlobalOpt = {
+    const expectedGlobalOpt: TOpt = {
       defaultMockName: '<mock>',
-      simplificationThreshold: 40,
-      simplifiedOutput: true,
+      collapseThreshold: 40,
+      collapseLongValues: true,
       automock: true,
       quoteSymbol: '\'',
       exposeFunctionNames: false,
@@ -93,98 +88,87 @@ describe('-------------------- tglobalopt ----------------------', () => {
     expect(globalOptions).toEqual(expectedGlobalOpt);
   });
 
-  test('should override values', () => {
-    // ACT
-    const globalOptions = tglobalopt({
-      defaultMockName: 'mock name',
-      simplificationThreshold: 1,
-      simplifiedOutput: false,
+  test('should override and merge options', () => {
+    // ARRANGE
+    tglobalopt({
+      automock: true,
       quoteSymbol: '"',
+    });
+
+    // ACT
+    const globalOpt = tglobalopt({
+      automock: false,
+      defaultMockName: 'mock name',
+      collapseThreshold: 1,
+      collapseLongValues: false,
+      // quoteSymbol: // not provided
       exposeFunctionNames: true,
       autoValuesPrefix: 'value from ',
     });
 
     // ASSERT
-    expect(globalOptions).toEqual({
+    const expectedGlobalOpt: TOpt = {
       defaultMockName: 'mock name',
-      simplificationThreshold: 1,
-      simplifiedOutput: false,
-      automock: true, // has default value
-      quoteSymbol: '"',
+      collapseThreshold: 1,
+      collapseLongValues: false,
+      automock: false,
+      quoteSymbol: '"',  // has default value
       exposeFunctionNames: true,
       autoValuesPrefix: 'value from ',
-    });
-
-    // ACT 2
-    const globalOptions1 = tglobalopt({
-      automock: false,
-    });
-
-    // ASSERT 2
-    expect(globalOptions1.automock).toBe(false);
+    }
+    expect(globalOpt).toEqual(expectedGlobalOpt);
   });
 
-  test('should take affect', () => {
+  test('should not affect local options', () => {
+    // ARRANGE
+    tlocalopt({ defaultMockName: 'aaa' });
+
     // ACT
-    tglobalopt({ defaultMockName: 'aaa' });
+    tglobalopt({ defaultMockName: 'bbb' });
 
     // ASSERT
-    expect(tunmock(tmock())).toBe('aaa');
+    expect(tlocalopt().defaultMockName).toBe('aaa');
   });
 });
 
 describe('-------------------- tlocalopt ----------------------', () => {
-  test('should accept empty options', () => {
+  test('should return default options when options have not been changed until now', () => {
     // ACT
-    tlocalopt();
-  });
-
-  test('should return all settings', () => {
-    // ACT
-    const globalOptions = tlocalopt();
+    const localOpt = tlocalopt();
 
     // ASSERT
-    expect(globalOptions).toEqual({});
+    expect(localOpt).toEqual({});
   });
 
-  test('should override values', () => {
-    // ACT
-    const localOptions = tlocalopt({
+  test('should override and merge options', () => {
+    // ARRANGE
+    tlocalopt({
+      automock: true,
       defaultMockName: 'mock name',
-      simplificationThreshold: 1,
-      simplifiedOutput: false,
+    });
+
+    // ACT
+    const localOpt = tlocalopt({
+      // automock: // not provided
+      defaultMockName: 'overriden mock name',
+      collapseThreshold: 1,
+      collapseLongValues: false,
       quoteSymbol: '"',
       exposeFunctionNames: true,
       autoValuesPrefix: 'value from ',
     });
 
     // ASSERT
-    expect(localOptions).toEqual({
-      defaultMockName: 'mock name',
-      simplificationThreshold: 1,
-      simplifiedOutput: false,
+    const expectedLocalOpt: TOpt = {
+      automock: true,
+      defaultMockName: 'overriden mock name',
+      collapseThreshold: 1,
+      collapseLongValues: false,
       quoteSymbol: '"',
       exposeFunctionNames: true,
       autoValuesPrefix: 'value from ',
-    });
-
-    // ACT 2
-    const localOptions1 = tglobalopt({
-      defaultMockName: 'mock name 1',
-      automock: false,
-    });
-
-    // ASSERT 2
-    expect(localOptions1.defaultMockName).toBe('mock name 1');
-    expect(localOptions1.automock).toBe(false);
-  });
-
-  test('should take effect', () => {
-    // ACT
-    tlocalopt({ defaultMockName: 'aaa' });
-
-    // ASSERT
-    expect(tunmock(tmock())).toBe('aaa');
+    };
+    expect(localOpt).toEqual(expectedLocalOpt);
   });
 
   test('should be erased by treset', () => {
@@ -197,13 +181,25 @@ describe('-------------------- tlocalopt ----------------------', () => {
     // ASSERT
     expect(tlocalopt()).toEqual({});
   });
+
+  test('should not affect global options', () => {
+    // ARRANGE
+    tglobalopt({ defaultMockName: 'aaa' });
+
+    // ACT
+    tlocalopt({ defaultMockName: 'bbb' });
+
+    // ASSERT
+    expect(tglobalopt().defaultMockName).toBe('aaa');
+  });
 });
 
 describe('----------------------- options ------------------------', () => {
   describe('automock', () => {
     test('should return proxy when automock enabled for not explicitly mocked', () => {
       // ACT
-      const mock = tmock({ automock: true });
+      tlocalopt({ automock: true });
+      const mock = tmock();
 
       // ASSERT
       expect(typeof mock.a).toBe('function');
@@ -219,7 +215,7 @@ describe('----------------------- options ------------------------', () => {
     });
   });
 
-  describe('simplifiedOutput and simplificationThreshold', () => {
+  describe('collapseLongValues and collapseThreshold', () => {
     test.each([
       [{ a: 1 }, true, '<mock>({a: 1})'],
       [{ a: 11 }, true,  '<mock>({...})'],
@@ -230,11 +226,11 @@ describe('----------------------- options ------------------------', () => {
       [tmock('aa').f(), true, '<mock>(aa.f())'],
       [tmock('aaa').f(), true, '<mock>(<...>)'],
       [tmock('aaa').f(), false, '<mock>(aaa.f())'],
-    ])('should collapse when stringified length exceeds simplification threshold %#', (arg, simplifiedOutput, expectedResult) => {
+    ])('should collapse when stringified values length exceeds collapse threshold %#', (arg, collapseLongValues, expectedResult) => {
       // ARRANGE
       tlocalopt({
-        simplifiedOutput: simplifiedOutput,
-        simplificationThreshold: 6,
+        collapseLongValues: collapseLongValues,
+        collapseThreshold: 6,
       });
       const mock = tmock();
 
@@ -452,25 +448,6 @@ describe('----------------------- tmock arguments ------------------------', () 
     expect(tunmock(mock1)).toEqual(unmockedInitializers);
     expect(tunmock(mock2)).toEqual(unmockedInitializers);
   });
-
-  // test('should accept options as first or second or third argument', () => {
-  //   // ARRANGE
-  //   expect(tglobalopt().automock).toBe(true);
-  //   const options: TmockInstanceOptions = { automock : false };
-
-  //   // ACT
-  //   const mock1 = tmock(options);
-  //   const mock2 = tmock('', options);
-  //   const mock3 = tmock('', [], options);
-  //   mock1.a;
-  //   mock2.a;
-  //   mock3.a;
-
-  //   // ASSERT
-  //   expect(tunmock(mock1).a).toBeUndefined();
-  //   expect(tunmock(mock2).a).toBeUndefined();
-  //   expect(tunmock(mock3).a).toBeUndefined();
-  // });
 
   test.skip('Mock static type checking should work for non-generic form', () => {
     tmock([m => m.anyProp, 7]); // ok
@@ -1799,7 +1776,7 @@ describe('------------------- treset --------------------', () => {
 
   test('should erase mock calls', () => {
     // ARRANGE
-    tlocalopt({ simplifiedOutput: false });
+    tlocalopt({ collapseLongValues: false });
     const mock1 = tmock('mock1', [{ f: function fff() {} }]);
     const mock2 = tmock('mock2');
 
@@ -1984,8 +1961,8 @@ describe('----------------- tinfo ------------------', () => {
       function f(arg1, arg2) {
         arg1(arg2.prop.p);
       }
-      const mock1 = tmock('mock1', { simplifiedOutput: false });
-      const mock2 = tmock('mock2', { simplifiedOutput: false });
+      const mock1 = tmock('mock1');
+      const mock2 = tmock('mock2');
       f(mock1, mock2);
 
       // ACT
