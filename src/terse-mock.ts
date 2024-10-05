@@ -972,29 +972,50 @@ function getSutProxy(pathBuilder: PathBuilder, options: TOpt) {
   return sutProxy;
 }
 
-function parseTmockArgs<T>(nameOrInitializersArg?: NameOrInitializerArgType<T>, initializersArg?: InitializerArgType<T>) {
+function initializersToArrayOfCouples<T>(initializerArg:  InitializerArgType<T>): TInitCouple[]  {
+  let initializers: (TInitObject | TInitCouple)[];
+  if (!isArray(initializerArg)) {
+    initializers = [initializerArg as TInitObject];
+  } else if (isInitCouple(initializerArg)) {
+    initializers = [initializerArg as TInitCouple];
+  } else {
+    initializers = initializerArg as (TInitObject | TInitCouple)[];
+  }
+
+  const initCouples: TInitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as TInitCouple[] ?? [];
+  const initObjects = initializers.filter(initializer => isObject(initializer)) as TInitObject[] ?? [];
+  for (const initObject of initObjects) {
+    // Make init couples from init object.
+    for (const [prop, val] of Object.entries(initObject)) {
+      initCouples.unshift([(p) => p[prop], val]);
+    }
+  }
+
+  return initCouples;
+}
+
+function parseTmockArgs<T>(nameOrInitializersArg?: NameOrInitializerArgType<T>, initializersArg?: InitializerArgType<T>): { name: string | undefined; initializers: TInitCouple[] } {
   let name: string | undefined;
-  let initializers: (TInitCouple | TInitObject)[] | undefined;
+  let initializers: TInitCouple[] | undefined;
   if (nameOrInitializersArg !== undefined) {
     if (isString(nameOrInitializersArg)) {
       name = nameOrInitializersArg as string;
     } else {
-      initializers = unifyInitializers(nameOrInitializersArg);
+      initializers = initializersToArrayOfCouples<T>(nameOrInitializersArg as InitializerArgType<T>);
     }
   }
   if (initializersArg) {
     if (initializers) {
       throw new Error('tmock: multiple initializer arguments not allowed');
     }
-    initializers = unifyInitializers(initializersArg);
+    initializers = initializersToArrayOfCouples<T>(initializersArg);
   }
-  return { name, initializers };
 
-  // TODO: reuse
-  // TODO: add trasformation InitObject -> InitCouples ?
-  function unifyInitializers(arg): (TInitCouple | TInitObject)[] {
-    return (isInitCouple(arg) || isObject(arg) ? [arg] : arg);
+  if (!initializers) {
+    initializers = [];
   }
+
+  return { name, initializers };
 }
 
 // Inspired by https://stackoverflow.com/questions/67824800/typescript-generic-use-default-value-only
@@ -1026,47 +1047,21 @@ export function tmock<T = void>(
   userMockTrees[mockId] = userMockTree;
   sutMockTrees[mockId] = sutMockTree;
 
-  const initCouples: TInitCouple[] =
-    parsedArgs.initializers?.filter(initializer => isArray(initializer) && (initializer as Array<any>).length === 2) as TInitCouple[] ?? [];
-
-  const initObject = parsedArgs.initializers?.find(initializer => isObject(initializer)) ?? {};
-  // Make init couples from init object.
-  // TODO: apply in unifyInitializers
-  for (const [prop, val] of Object.entries(initObject)) {
-    initCouples.unshift([(p) => p[prop], val]);
-  }
-
   const sutMockProxy = getSutProxy(pathBuilder, options);
 
-  if (initCouples.length) {
-    tset(sutMockProxy, initCouples);
+  if (parsedArgs.initializers.length) {
+    tset(sutMockProxy, parsedArgs.initializers);
   }
 
   return sutMockProxy;
 }
 
-// TODO: reuse unifyInitializers
 export function tstub<T = void>(initializer: InitializerArgType<T>): T extends void ? any : T {
-  let initializers: (TInitObject | TInitCouple)[];
-  if (!isArray(initializer)) {
-    initializers = [initializer as TInitObject];
-  } else if (isInitCouple(initializer)) {
-    initializers = [initializer as TInitCouple];
-  } else {
-    initializers = initializer as (TInitObject | TInitCouple)[];
-  }
+  const initCouples: TInitCouple[] = initializersToArrayOfCouples<T>(initializer);
+  const stub = applyCouplesToStub({}, initCouples);
 
-  const stubFromInitializer = initializers.find(initializer => isObject(initializer));
-  let stub = deepClone(stubFromInitializer) ?? {};
-
-  const initCouples: TInitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as TInitCouple[];
-  stub = applyCouplesToStub(stub, initCouples);
-
-  // TODO: is isFunction(stub) possible ?
   if (isObjectOrArrayOrClass(stub) || isFunction(stub)) {
-    Object.defineProperty(stub, IS_A_STUB, { // Make stubs identifiable by setting non-enumerable property that is not exposed to user.
-      value: true,
-    });
+    Object.defineProperty(stub, IS_A_STUB, { value: true }); // Make stubs identifiable by setting non-enumerable property that is not exposed to user.
   }
 
   return stub;

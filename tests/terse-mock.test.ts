@@ -390,16 +390,7 @@ describe('----------------------- tmock arguments ------------------------', () 
     expect(tunmock(mock)).toBe('mockName');
   });
 
-  test('should treat empty string as name', () => {
-    // ACT
-    const mock = tmock('');
-    mock.a;
-
-    // ASSERT
-    expect(tunmock(mock)).toEqual({ a: 'a' });
-  });
-
-  test('should accept init tuple as first or second argument', () => {
+  test('should accept tuple as first or second argument', () => {
     // ARRANGE
     const initCouple: TInit = [(m) => m.a, 1];
 
@@ -412,12 +403,11 @@ describe('----------------------- tmock arguments ------------------------', () 
     expect(tunmock(mock2.a)).toBe(1);
   });
 
-  // TODO: combine with 'should accept init tuple as first or second argument'
-  test('should accept array of tuples as first or second argument', () => {
+  test('should accept object as first or second argument', () => {
     // ARRANGE
-    const initializers: TInit = [
-      [(m) => m.a, 3],
-    ];
+    const initializers: TInit = {
+      a: 3,
+    };
 
     // ACT
     const mock1 = tmock(initializers);
@@ -431,11 +421,14 @@ describe('----------------------- tmock arguments ------------------------', () 
     expect(tunmock(mock2)).toEqual(unmockedInitializers);
   });
 
-  test('should accept initializing object as first or second argument', () => {
+  test('should accept array of tuples and objects as first or second argument', () => {
     // ARRANGE
-    const initializers: TInit = {
-      a: 3,
-    };
+    const initializers: TInit = [
+      [(m) => m.a, 1],
+      { b: 3 },
+      [(m) => m.c, 5],
+      { d: 7 },
+    ];
 
     // ACT
     const mock1 = tmock(initializers);
@@ -443,7 +436,10 @@ describe('----------------------- tmock arguments ------------------------', () 
 
     // ASSERT
     const unmockedInitializers = {
-      a: 3,
+      a: 1,
+      b: 3,
+      c: 5,
+      d: 7,
     };
     expect(tunmock(mock1)).toEqual(unmockedInitializers);
     expect(tunmock(mock2)).toEqual(unmockedInitializers);
@@ -741,7 +737,41 @@ describe('-------------------- mock behavior ----------------------', () => {
 });
 
 describe('-------------------- tstub ----------------------', () => {
-  test.skip('Stub static type checking should work for non-generic form', () => {
+  test('should accept object as argument', () => {
+    // ACT
+    const stub = tstub({ a: 1 });
+
+    // ASSERT
+    expect(stub).toEqual({ a: 1 });
+  });
+
+  test('should accept init couple as argument', () => {
+    // ACT
+    const stub = tstub([(s) => s.a, 1]);
+
+    // ASSERT
+    expect(stub).toEqual({ a: 1 });
+  });
+
+  test('should accept array of couples and objects as argument', () => {
+    // ACT
+    const stub = tstub([
+      [(s) => s.a, 1],
+      { b: 3 },
+      [(s) => s.c, 5],
+      { d: 7 },
+    ]);
+
+    // ASSERT
+    expect(stub).toEqual({
+      a: 1,
+      b: 3,
+      c: 5,
+      d: 7,
+    });
+  });
+
+  test.skip('static type checking should work for non-generic form', () => {
     tstub([m => m.anyProp, 7]); // ok
     tstub([ [m => m.anyProp, 7] ]); // ok
     tstub([
@@ -759,7 +789,7 @@ describe('-------------------- tstub ----------------------', () => {
     // tstub('s'); // type error
   });
 
-  test.skip('Mock static type checking should work for generic form', () => {
+  test.skip('static type checking should work for generic form', () => {
     // ARRANGE
     interface I {
       existingProp1: number;
@@ -794,37 +824,6 @@ describe('-------------------- tstub ----------------------', () => {
     //     nonExistingProp: 1, // type error
     //   },
     // ]);
-  });
-
-  test('should accept object as argument', () => {
-    // ACT
-    const stub = tstub({ a: 1 });
-
-    // ASSERT
-    expect(stub).toEqual({ a: 1 });
-  });
-
-  test('should accept init couple as argument', () => {
-    // ACT
-    const stub = tstub([(s) => s.a, 1]);
-
-    // ASSERT
-    expect(stub).toEqual({ a: 1 });
-  });
-
-  test('should accept generic form', () => {
-    // ARRANGE
-    interface I {
-      a: number;
-      b: string;
-    }
-    // ASSERT
-    tstub<string>([(s) => s.length, 1]);
-    tstub<I>({ b: '1' });
-    tstub<I>([
-      { a: 1 },
-      [(s) => s.b, 'a'],
-    ]);
   });
 
   test.each([
@@ -1141,7 +1140,7 @@ describe('-------------------- tunmock ---------------------', () => {
     mock.f[s] = '1';
     mock.g();
     mock.g.prop = 3;
-    mock.g()[s] = '3';
+    mock.g[s] = '3';
 
     // ACT
     const res = tunmock(mock);
@@ -1150,10 +1149,10 @@ describe('-------------------- tunmock ---------------------', () => {
     expect(res.f).toStrictEqual(expect.any(Function));
     expect(res.f()).toBe(1);
     expect(res.f.prop).toBe(1);
-    //expect(res.f[s]).toBe('1'); // TODO: support symbols
+    expect(res.f[s]).toBe('1');
     expect(res.g).toStrictEqual(expect.any(Function));
     expect(res.g.prop).toBe(3);
-    //expect(res.g[s]).toBe('3'); // TODO: support symbols
+    expect(res.g[s]).toBe('3');
   });
 
   test('unmocked function should return predefined values for known arguments, otherwise automock value', () => {

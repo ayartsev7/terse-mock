@@ -1,7 +1,7 @@
 ﻿import { tmock, tunmock } from '../src/terse-mock';
-jest.mock('./module-mocked', () => tmock('module-mocked', [{
+jest.mock('./module-mocked', () => tmock('module-mocked', {
   function2: () => '777',
-}]));
+}));
 import { f } from './module-uses-mocked'
 
 test('should work as jest.mock argument that setup predefined return values', () => {
