@@ -1,6 +1,4 @@
-﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tglobalopt, IExternalMock, InitCouple, AnyInitializer,
-  TmockGlobalOptions, tstub, TmockInstanceOptions,
-} from '../src/terse-mock';
+﻿import tm, { TM_ANY, tset, treset, tmock, tunmock, tinfo, tglobalopt, IExternalMock, TGlobalOpt, tstub, TInit, tlocalopt } from '../src/terse-mock';
 
 const jestMock: IExternalMock = {
   create: () => jest.fn(),
@@ -59,7 +57,7 @@ beforeEach(() => {
   treset();
 });
 
-test('all exported functions should have analogues in tm', () => {
+test('should all exported functions have analogues in tm', () => {
   // ASSERT
   expect(tm.ANY).toBe(TM_ANY);
   expect(tm.set).toBe(tset);
@@ -69,15 +67,21 @@ test('all exported functions should have analogues in tm', () => {
   expect(tm.unmock).toBe(tunmock);
   expect(tm.info).toBe(tinfo);
   expect(tm.globalopt).toBe(tglobalopt);
+  expect(tm.localopt).toBe(tlocalopt);
 });
 
 describe('-------------------- tglobalopt ----------------------', () => {
   test('should accept empty options', () => {
     // ACT
+    tglobalopt();
+  });
+
+  test('should return all settings', () => {
+    // ACT
     const globalOptions = tglobalopt();
 
     // ASSERT
-    const expectedGlobalOpt: TmockGlobalOptions = {
+    const expectedGlobalOpt: TGlobalOpt = {
       defaultMockName: '<mock>',
       simplificationThreshold: 40,
       simplifiedOutput: true,
@@ -89,71 +93,314 @@ describe('-------------------- tglobalopt ----------------------', () => {
     expect(globalOptions).toEqual(expectedGlobalOpt);
   });
 
-  test('should be merged options passed to tglobalopt', () => {
+  test('should override values', () => {
     // ACT
     const globalOptions = tglobalopt({
       defaultMockName: 'mock name',
       simplificationThreshold: 1,
       simplifiedOutput: false,
-      // do not pass automockEnabled
       quoteSymbol: '"',
       exposeFunctionNames: true,
       autoValuesPrefix: 'value from ',
     });
 
     // ASSERT
-    const expectedGlobalOpt: TmockGlobalOptions = {
+    expect(globalOptions).toEqual({
       defaultMockName: 'mock name',
       simplificationThreshold: 1,
       simplifiedOutput: false,
-      automock: true,
+      automock: true, // has default value
       quoteSymbol: '"',
       exposeFunctionNames: true,
       autoValuesPrefix: 'value from ',
-    };
-    expect(globalOptions).toEqual(expectedGlobalOpt);
+    });
+
+    // ACT 2
+    const globalOptions1 = tglobalopt({
+      automock: false,
+    });
+
+    // ASSERT 2
+    expect(globalOptions1.automock).toBe(false);
   });
 
-  test.each([
-    [ false, function f() {}, '<mock>(<function>)'],
-    [ false, new Function(), '<mock>(<function>)'],
-    [ true, function f() {}, '<mock>(<function f>)'],
-    [ true, new Function(), '<mock>(<function anonymous>)'],
-  ])('should output function names when exposeFunctionNames is set to true %#', (exposeFunctionNames, func, expectedUnmocked) => {
-    // ARRANGE
-    tglobalopt({ exposeFunctionNames: exposeFunctionNames });
-    const mock = tmock();
-
+  test('should take affect', () => {
     // ACT
-    const res = mock(func);
+    tglobalopt({ defaultMockName: 'aaa' });
 
     // ASSERT
-    expect(tunmock(res)).toBe(expectedUnmocked);
+    expect(tunmock(tmock())).toBe('aaa');
+  });
+});
+
+describe('-------------------- tlocalopt ----------------------', () => {
+  test('should accept empty options', () => {
+    // ACT
+    tlocalopt();
   });
 
-  test('should put prefix defined by autoValuesPrefix before auto-generated values', () => {
-    // ARRANGE
-    tglobalopt({ autoValuesPrefix: 'value from ' });
-    const mock = tmock();
-
+  test('should return all settings', () => {
     // ACT
-    const res = {
-      a: mock.a,
-      b: mock.f(mock.g()).a,
-      c: mock.f(tmock('')),
-      d: mock.f(tmock('').a),
-      e: tmock(),
-      f: tmock(''),
-    }
+    const globalOptions = tlocalopt();
 
     // ASSERT
-    expect(tunmock(res)).toEqual({
-      a: 'value from <mock>.a',
-      b: 'value from <mock>.f(<mock>.g()).a',
-      c: 'value from <mock>.f(<unnamed mock>)',
-      d: 'value from <mock>.f(a)',
-      e: 'value from <mock>',
-      f: 'value from <mock>',
+    expect(globalOptions).toEqual({});
+  });
+
+  test('should override values', () => {
+    // ACT
+    const localOptions = tlocalopt({
+      defaultMockName: 'mock name',
+      simplificationThreshold: 1,
+      simplifiedOutput: false,
+      quoteSymbol: '"',
+      exposeFunctionNames: true,
+      autoValuesPrefix: 'value from ',
+    });
+
+    // ASSERT
+    expect(localOptions).toEqual({
+      defaultMockName: 'mock name',
+      simplificationThreshold: 1,
+      simplifiedOutput: false,
+      quoteSymbol: '"',
+      exposeFunctionNames: true,
+      autoValuesPrefix: 'value from ',
+    });
+
+    // ACT 2
+    const localOptions1 = tglobalopt({
+      defaultMockName: 'mock name 1',
+      automock: false,
+    });
+
+    // ASSERT 2
+    expect(localOptions1.defaultMockName).toBe('mock name 1');
+    expect(localOptions1.automock).toBe(false);
+  });
+
+  test('should take effect', () => {
+    // ACT
+    tlocalopt({ defaultMockName: 'aaa' });
+
+    // ASSERT
+    expect(tunmock(tmock())).toBe('aaa');
+  });
+
+  test('should be erased by treset', () => {
+    // ARRANGE
+    tlocalopt({ defaultMockName: 'aaa' });
+
+    // ACT
+    treset();
+
+    // ASSERT
+    expect(tlocalopt()).toEqual({});
+  });
+});
+
+describe('----------------------- options ------------------------', () => {
+  describe('automock', () => {
+    test('should return proxy when automock enabled for not explicitly mocked', () => {
+      // ACT
+      const mock = tmock({ automock: true });
+
+      // ASSERT
+      expect(typeof mock.a).toBe('function');
+    });
+
+    test('should return undefined when automock disabled for not explicitly mocked', () => {
+      // ACT
+      tlocalopt({ automock: false });
+      const mock = tmock();
+
+      // ASSERT
+      expect(mock.a).toBeUndefined();
+    });
+  });
+
+  describe('simplifiedOutput and simplificationThreshold', () => {
+    test.each([
+      [1, false, '<mock>(1)'],
+      [1, true,  '<mock>(1)'],
+      [{}, false, '<mock>({})'],
+      [{}, true,  '<mock>({...})'],
+      [{ '0': 7 }, false, '<mock>({0: 7})'],
+      [{ '0': 7 }, true,  '<mock>({...})'],
+      [{ a: '7', b: 0 }, false, `<mock>({a: '7', b: 0})`],
+      [{ a: '7', b: 0 }, true,  '<mock>({...})'],
+      [[], false, '<mock>([])'],
+      [[], true,  '<mock>([...])'],
+      [[1], false, '<mock>([1])'],
+      [[1], true,  '<mock>([...])'],
+      [[`1`, true, {}], false, `<mock>(['1', true, {}])`],
+      [[`1`, true, {}], true,  '<mock>([...])'],
+    ])('should simplify output %#', (arg, simplifiedOutput, expectedResult) => {
+      // ARRANGE
+      tlocalopt({ simplifiedOutput: simplifiedOutput });
+      const mock = tmock({ simplifiedOutput: false });
+
+      // ACT
+      const res = mock(arg);
+
+      // ASSERT
+      expect(tunmock(res)).toEqual(expectedResult);
+    });
+
+    test('should collapse mocks when stringified mock length exceeds simplification threshold 0', () => {
+      // ARRANGE
+      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 0, defaultMockName: 'mock' });
+      const mock = tmock();
+      const mock0 = tmock('');
+      const mock1 = tmock('m');
+
+      // ACT + ASSERT
+      expect(tunmock(mock(mock0))).toBe('mock()');
+      expect(tunmock(mock(mock1))).toBe('mock(<...>)');
+    });
+
+    test('should mocks when stringified mock length exceeds positive simplification threshold', () => {
+      // ARRANGE
+      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 10, defaultMockName: 'mock' });
+      const mock = tmock();
+
+      // ACT + ASSERT
+      expect(tunmock(mock(mock.fff()))).toBe('mock(mock.fff())');
+      expect(tunmock(mock(mock.ffff()))).toBe('mock(<...>)');
+    });
+  });
+
+  describe('defaultMockName', () => {
+    test('should change default mock name', () => {
+      // ACT
+      tglobalopt({ defaultMockName: 'aaa' });
+
+      // ASSERT
+      expect(tunmock(tmock())).toBe('aaa');
+    });
+  });
+
+  describe('quoteSymbol', () => {
+    test('should use defined quotation symbol', () => {
+      // ACT
+      tglobalopt({ quoteSymbol: '~' });
+
+      // ASSERT
+      // eslint-disable-next-line quotes
+      expect(tunmock(tmock()('a', "b", `c`))).toBe('<mock>(~a~, ~b~, ~c~)');
+    });
+  });
+
+  describe('exposeFunctionNames', () => {
+    test.each([
+      [ false, function f() {}, '<mock>(<function>)'],
+      [ false, new Function(), '<mock>(<function>)'],
+      [ true, function f() {}, '<mock>(<function f>)'],
+      [ true, new Function(), '<mock>(<function anonymous>)'],
+    ])('should output function names when exposeFunctionNames is true %#', (exposeFunctionNames, func, expectedUnmocked) => {
+      // ARRANGE
+      tglobalopt({ exposeFunctionNames: exposeFunctionNames });
+      const mock = tmock();
+
+      // ACT
+      const res = mock(func);
+
+      // ASSERT
+      expect(tunmock(res)).toBe(expectedUnmocked);
+    });
+  });
+
+  describe('autoValuesPrefix', () => {
+    test('should add prefix to auto mocked values', () => {
+      // ARRANGE
+      tlocalopt({ autoValuesPrefix: 'value from ' });
+      const mock = tmock();
+
+      // ACT
+      const result = tunmock(mock());
+
+      // ASSERT
+      expect(result).toBe('value from <mock>()');
+    });
+
+    test('should put prefix before auto-generated values', () => {
+      // ARRANGE
+      tglobalopt({ autoValuesPrefix: 'value from ' });
+      const mock = tmock();
+
+      // ACT
+      const res = {
+        a: mock.a,
+        b: mock.f(mock.g()).a,
+        c: mock.f(tmock('')),
+        d: mock.f(tmock('').a),
+        e: tmock(),
+        f: tmock(''),
+      }
+
+      // ASSERT
+      expect(tunmock(res)).toEqual({
+        a: 'value from <mock>.a',
+        b: 'value from <mock>.f(<mock>.g()).a',
+        c: 'value from <mock>.f()',
+        d: 'value from <mock>.f(a)',
+        e: 'value from <mock>',
+        f: 'value from <mock>',
+      });
+    });
+  });
+
+  describe('externalMock', () => {
+    test('should consider calls of explicitly defined functions', () => {
+      // ARRANGE
+      tlocalopt({ externalMock: jestMock });
+      const mock = tmock([
+        {
+          f1: function () {},
+          f2: function () {},
+          p: {
+            f3: () => undefined,
+          },
+          f4: [new Function()],
+        },
+        [m => m.p.f5, new Function()],
+        [m => m.f6, function () {}],
+      ]);
+
+      // ACT
+      mock.f2();
+      mock.p.f3();
+      mock.p.f3(1);
+      mock.p.f3(() => undefined, undefined);
+      mock.f4[0](true, false);
+      mock.p.f5('');
+      mock.f6();
+
+      // ASSERT
+      expect(tinfo(mock.f1).externalMock).not.toBeCalled();
+      expect(tinfo(mock.f2).externalMock).toBeCalledTimes(1);
+      expect(tinfo(mock.p.f3).externalMock.mock.calls).toEqual([[], [1], [expect.any(Function), undefined] ]);
+      expect(tinfo(mock.f4[0]).externalMock.mock.calls).toEqual([[true, false]]);
+      expect(tinfo(mock.p.f5).externalMock.mock.calls).toEqual([['']]);
+      expect(tinfo(mock.f6).externalMock).toBeCalledTimes(1);
+    });
+
+    test('should consider calls of functions that were not explicitly defined', () => {
+      // ARRANGE
+      tlocalopt({ externalMock: jestMock });
+      const mock = tmock();
+
+      // ACT
+      mock.f1();
+      mock.p.f2();
+      mock.p.f2(1);
+      mock.p.f2(() => undefined, undefined);
+      mock.q[0](true, false);
+
+      // ASSERT
+      expect(tinfo(mock.f1).externalMock).toBeCalledTimes(1);
+      expect(tinfo(mock.p.f2).externalMock.mock.calls).toEqual([[], [1], [expect.any(Function), undefined] ]);
+      expect(tinfo(mock.q[0]).externalMock.mock.calls).toEqual([[true, false]]);
     });
   });
 });
@@ -182,7 +429,7 @@ describe('----------------------- tmock arguments ------------------------', () 
 
   test('should accept init tuple as first or second argument', () => {
     // ARRANGE
-    const initCouple: InitCouple = [(m) => m.a, 1];
+    const initCouple: TInit = [(m) => m.a, 1];
 
     // ACT
     const mock1 = tmock(initCouple);
@@ -193,11 +440,11 @@ describe('----------------------- tmock arguments ------------------------', () 
     expect(tunmock(mock2.a)).toBe(1);
   });
 
-  test('should accept array of initializers as first or second argument', () => {
+  // TODO: combine with 'should accept init tuple as first or second argument'
+  test('should accept array of tuples as first or second argument', () => {
     // ARRANGE
-    const initializers: AnyInitializer[] = [
-      { a: 1 },
-      [(m) => m.b, 3],
+    const initializers: TInit = [
+      [(m) => m.a, 3],
     ];
 
     // ACT
@@ -206,192 +453,156 @@ describe('----------------------- tmock arguments ------------------------', () 
 
     // ASSERT
     const unmockedInitializers = {
-      a: 1,
-      b: 3,
+      a: 3,
     };
     expect(tunmock(mock1)).toEqual(unmockedInitializers);
     expect(tunmock(mock2)).toEqual(unmockedInitializers);
   });
 
-  test('should accept options as first or second or third argument', () => {
+  test('should accept initializing object as first or second argument', () => {
     // ARRANGE
-    expect(tglobalopt().automock).toBe(true);
-    const options: TmockInstanceOptions = { automock : false };
+    const initializers: TInit = {
+      a: 3,
+    };
 
     // ACT
-    const mock1 = tmock(options);
-    const mock2 = tmock('', options);
-    const mock3 = tmock('', [], options);
-    mock1.a;
-    mock2.a;
-    mock3.a;
+    const mock1 = tmock(initializers);
+    const mock2 = tmock('', initializers);
 
     // ASSERT
-    expect(tunmock(mock1).a).toBeUndefined();
-    expect(tunmock(mock2).a).toBeUndefined();
-    expect(tunmock(mock3).a).toBeUndefined();
+    const unmockedInitializers = {
+      a: 3,
+    };
+    expect(tunmock(mock1)).toEqual(unmockedInitializers);
+    expect(tunmock(mock2)).toEqual(unmockedInitializers);
   });
 
-  test('should accept generic form', () => {
+  // test('should accept options as first or second or third argument', () => {
+  //   // ARRANGE
+  //   expect(tglobalopt().automock).toBe(true);
+  //   const options: TmockInstanceOptions = { automock : false };
+
+  //   // ACT
+  //   const mock1 = tmock(options);
+  //   const mock2 = tmock('', options);
+  //   const mock3 = tmock('', [], options);
+  //   mock1.a;
+  //   mock2.a;
+  //   mock3.a;
+
+  //   // ASSERT
+  //   expect(tunmock(mock1).a).toBeUndefined();
+  //   expect(tunmock(mock2).a).toBeUndefined();
+  //   expect(tunmock(mock3).a).toBeUndefined();
+  // });
+
+  test.skip('Mock static type checking should work for non-generic form', () => {
+    tmock([m => m.anyProp, 7]); // ok
+    tmock([ [m => m.anyProp, 7] ]); // ok
+    tmock([
+      [m => m.prop, tmock([nested => nested.q, 1])],
+    ]); // ok
+    tmock([
+      [m => m.prop, tmock('nestedMock', [
+        [nested => nested.q, 1],
+      ])],
+    ]); // ok
+    tmock({ anyProp: 7 }); // ok
+    tmock([
+      [m => m.prop, tmock([nested => nested.q, 1])],
+      { anyProp: 7 },
+    ]); // ok
+
+    tmock('s', [m => m.anyProp, 7]); // ok
+    tmock('s', [ [m => m.anyProp, 7] ]); // ok
+    tmock('s', [
+      [m => m.prop, tmock([nested => nested.q, 1])],
+    ]); // ok
+    tmock('s', [
+      [m => m.prop, tmock('nestedMock', [
+        [nested => nested.q, 1],
+      ])],
+    ]); // ok
+    tmock('s', { anyProp: 7 }); // ok
+    tmock('s', [
+      [m => m.prop, tmock([nested => nested.q, 1])],
+      { anyProp: 7 },
+    ]); // ok
+
+    // // UNCOMMENT THE WHOLE COMMENTED BLOCK TO TEST STATIC TYPE CHECKING
+    // tmock([() => 1]); // type error
+    // tmock([ [7] ]); // type error
+    // tmock('s', [() => 1]); // type error
+    // tmock('s', [ [7] ]); // type error
+    // tmock('s', [
+    //   [m => m.prop, tmock('s', 's')],
+    // ]); // type error
+  });
+
+  test.skip('Mock static type checking should work for generic form', () => {
     // ARRANGE
     interface I {
-      a: number;
-      b: { c: string };
+      existingProp1: number;
+      existingProp2: number;
     }
 
     // ACT + ASSERT
-    tm.mock<I>('', [{ a: 1 }]),
-    tm.mock<Object>('', [[(m) => m.toString, () => '']]),
-    tm.mock<I>('', [
-      { a: 1 },
-      [(m) => m.a, 1],
-    ]);
-    tm.mock<I>([{ a: 1 }]),
-    tm.mock<I>([[(m) => m.a, 1]]),
-    tm.mock<I>([
-      { a: 1 },
-      [(m) => m.a, 1],
-    ]);
-    const mock = tm.mock<I>();
-    mock.b.c;
+    tmock<I>(); // ok
+    tmock<I>([m => m.existingProp1, 7]); // ok
+    tmock<I>([ [m => m.existingProp1, 7] ]); // ok
+    tmock<I>([ { existingProp1: 7 } ]); // ok
+    tmock<I>([
+      [m => m.existingProp1, 7],
+      { existingProp2: 7 },
+    ]); // ok
+    tmock<I>('s'); // ok
+    tmock<I>('s' ,[m => m.existingProp1, 7]); // ok
+    tmock<I>('s' ,[ [m => m.existingProp1, 7] ]); // ok
+    tmock<I>('s' ,[ { existingProp1: 7 } ]); // ok
+    tmock<I>('s' ,[
+      [m => m.existingProp1, 7],
+      { existingProp2: 7 },
+    ]); // ok
+
+    // // UNCOMMENT THE WHOLE COMMENTED BLOCK TO TEST STATIC TYPE CHECKING
+    // tmock<I>([m => m.nonExistingProp, 7]); // type error
+    // tmock<I>({
+    //   existingProp1: 1, // ok
+    //   nonExistingProp: 1, // type error
+    // });
+    // tmock<I>([
+    //   [(m) => m.existingProp1, 1], // ok
+    //   [(m) => m.nonExistingProp, 1], // type error
+    // ]);
+    // tmock<I>([
+    //   [(m) => m.nonExistingProp, 1], // type error
+    //   [(m) => m.existingProp1, 1], // ok
+    //   {
+    //     existingProp: 1, // ok
+    //     nonExistingProp: 1, // type error
+    //   },
+    // ]);
+    // tmock<I>('s', [m => m.anyProp, 7]); // type error
+    // tmock<I>('', {
+    //   existingProp1: 1, // ok
+    //   nonExistingProp: 1, // type error
+    // });
+    // tmock<I>('', [
+    //   [(m) => m.existingProp1, 1], // ok
+    //   [(m) => m.nonExistingProp, 1], // type error
+    // ]);
+    // tmock<I>('', [
+    //   [(m) => m.nomExistingProp, 1], // type error
+    //   [(m) => m.existingProp1, 1], // ok
+    //   {
+    //     existingProp2: 1, // ok
+    //     nonExistingProp: 1, // type error
+    //   },
+    // ]);
   });
 
   test('should throw when more then one initializer argument provided', () => {
     expect(() => tmock([], [])).toThrowError('tmock: multiple initializer arguments not allowed');
-  });
-
-  test('should throw when more then one options argument provided', () => {
-    expect(() => tmock({}, {})).toThrowError('tmock: multiple options arguments not allowed');
-    expect(() => tmock('', {}, {})).toThrowError('tmock: multiple options arguments not allowed');
-  });
-});
-
-describe('----------------------- tmock options ------------------------', () => {
-  describe('externalMock', () => {
-    test('should consider calls of explicitly defined functions', () => {
-      // ARRANGE
-      const mock = tmock([
-        {
-          f1: function () {},
-          f2: function () {},
-          p: {
-            f3: () => undefined,
-          },
-          f4: [new Function()],
-        },
-        [m => m.p.f5, new Function()],
-        [m => m.f6, function () {}],
-      ], { externalMock: jestMock });
-
-      // ACT
-      mock.f2();
-      mock.p.f3();
-      mock.p.f3(1);
-      mock.p.f3(() => undefined, undefined);
-      mock.f4[0](true, false);
-      mock.p.f5('');
-      mock.f6();
-
-      // ASSERT
-      expect(tinfo(mock.f1).externalMock).not.toBeCalled();
-      expect(tinfo(mock.f2).externalMock).toBeCalledTimes(1);
-      expect(tinfo(mock.p.f3).externalMock.mock.calls).toEqual([[], [1], [expect.any(Function), undefined] ]);
-      expect(tinfo(mock.f4[0]).externalMock.mock.calls).toEqual([[true, false]]);
-      expect(tinfo(mock.p.f5).externalMock.mock.calls).toEqual([['']]);
-      expect(tinfo(mock.f6).externalMock).toBeCalledTimes(1);
-    });
-
-    test('should consider calls of functions that were not explicitly defined', () => {
-      // ARRANGE
-      const mock = tmock({ externalMock: jestMock });
-
-      // ACT
-      mock.f1();
-      mock.p.f2();
-      mock.p.f2(1);
-      mock.p.f2(() => undefined, undefined);
-      mock.q[0](true, false);
-
-      // ASSERT
-      expect(tinfo(mock.f1).externalMock).toBeCalledTimes(1);
-      expect(tinfo(mock.p.f2).externalMock.mock.calls).toEqual([[], [1], [expect.any(Function), undefined] ]);
-      expect(tinfo(mock.q[0]).externalMock.mock.calls).toEqual([[true, false]]);
-    });
-  });
-
-  describe('simplifiedOutput and simplificationThreshold', () => {
-    test.each([
-      [1, '<mock>(1)', '<mock>(1)'],
-      [{}, '<mock>({})', '<mock>({...})'],
-      [{ '0': 7 }, '<mock>({0: 7})', '<mock>({...})'],
-      [{ a: '7', b: 0 }, `<mock>({a: '7', b: 0})`, '<mock>({...})'],
-      [[], '<mock>([])', '<mock>([...])'],
-      [[1], '<mock>([1])', '<mock>([...])'],
-      [[`1`, true, {}], `<mock>(['1', true, {}])`, '<mock>([...])'],
-    ])('should simplify output %#', (arg, expectedResult, expectedResultSimplified) => {
-      // ARRANGE
-      const mock = tm.mock({ simplifiedOutput: false });
-      const mockSimplifiedOutput = tm.mock({ simplifiedOutput: true });
-
-      // ACT
-      const res = mock(arg);
-      const resSimple = mockSimplifiedOutput(arg);
-
-      // ASSERT
-      expect(tm.unmock(res)).toEqual(expectedResult);
-      expect(tm.unmock(resSimple)).toEqual(expectedResultSimplified);
-    });
-
-    test('should simplify arguments-mocks when stringified mock length exceeds simplification threshold when threshold is zero', () => {
-      // ARRANGE
-      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 0, defaultMockName: 'mock' });
-      const mock = tmock();
-      const mockNameLength0 = tmock('');
-      const mockNameLength1 = tmock('m');
-
-      // ACT + ASSERT
-      expect(tunmock(mock(mockNameLength0))).toBe('mock(<unnamed mock>)');
-      expect(tunmock(mock(mockNameLength1))).toBe('mock(<...>)');
-    });
-
-    test('should simplify arguments-mocks when stringified mock length exceeds simplification threshold when threshold is positive', () => {
-      // ARRANGE
-      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 10, defaultMockName: 'mock' });
-      const mock = tmock();
-
-      // ACT + ASSERT
-      expect(tunmock(mock(mock.fff()))).toBe('mock(mock.fff())');
-      expect(tunmock(mock(mock.ffff()))).toBe('mock(<...>)');
-    });
-  });
-
-  describe('automock', () => {
-    test('should return proxy when automock enabled for not explicitly mocked', () => {
-      // ACT
-      const mock = tmock({ automock: true });
-
-      // ASSERT
-      expect(typeof mock.a).toBe('function');
-    });
-
-    test('should return undefined when automock disabled for not explicitly mocked', () => {
-      // ACT
-      const mock = tmock({ automock: false });
-
-      // ASSERT
-      expect(mock.a).toBeUndefined();
-    });
-  });
-
-  test('should add prefix to auto mocked values', () => {
-    // ARRANGE
-    const mock = tmock({ autoValuesPrefix: 'value from ' });
-
-    // ACT
-    const result = tunmock(mock());
-
-    // ASSERT
-    expect(result).toBe('value from <mock>()');
   });
 });
 
@@ -406,13 +617,13 @@ describe('-------------------- mock behavior ----------------------', () => {
 
   test('should be callable', () => {
     // ARRANGE
-    const mock = tm.mock();
+    const mock = tmock();
 
     // ACT
     mock();
 
     // ASSERT
-    const res = tm.unmock(mock);
+    const res = tunmock(mock);
     expect(res).toEqual(expect.any(Function));
   });
 
@@ -421,7 +632,7 @@ describe('-------------------- mock behavior ----------------------', () => {
     ...OBJECTS_CLASSES_ARRAYS,
   ])('should return predefined scalars, objects and arrays %#', (initialStub) => {
     // ARRANGE
-    const mock = tm.mock([{ a: initialStub }]);
+    const mock = tmock({ a: initialStub });
 
     // ACT + ASSERT
     expect(mock.a).toEqual(initialStub);
@@ -431,7 +642,7 @@ describe('-------------------- mock behavior ----------------------', () => {
     // ARRANGE
     class A {};
     const a = new A();
-    const mock = tm.mock([{
+    const mock = tmock([{
       class: a,
     }]);
 
@@ -450,7 +661,7 @@ describe('-------------------- mock behavior ----------------------', () => {
     (initialStub as any)[s] = 'sss';
 
     // ACT
-    const mock = tm.mock([{ f: initialStub }]);
+    const mock = tmock([{ f: initialStub }]);
 
     // ASSERT
     expect(mock.f()).toBe(DFAULT_NUMERIC_VALUE);
@@ -465,7 +676,7 @@ describe('-------------------- mock behavior ----------------------', () => {
     jest.fn(),
   ])('should preserve assigned values as is', (val) => {
     // ARRANGE
-    const mock = tm.mock();
+    const mock = tmock();
 
     // ACT
     mock.a = val;
@@ -476,7 +687,7 @@ describe('-------------------- mock behavior ----------------------', () => {
 
   test('values assigned to mock should override predefined values', () => {
     // ARRANGE
-    const mock = tm.mock([{ a: 1 }]);
+    const mock = tmock([{ a: 1 }]);
     tset(mock, [(m) => m.b, 3]);
     tset(mock, [(m) => m.c.cc, 5]);
 
@@ -493,7 +704,7 @@ describe('-------------------- mock behavior ----------------------', () => {
 
   test('should allow to assign function properties and function should remain callable', () => {
     // ARRANGE
-    const mock = tm.mock();
+    const mock = tmock();
 
     // ACT
     mock.a.b.c = null;
@@ -502,7 +713,7 @@ describe('-------------------- mock behavior ----------------------', () => {
     // ASSERT
     expect(mock.a.b.c).toBe(null);
     expect(mock.a(1).b.c).toEqual([1]);
-    const res = tm.unmock(mock);
+    const res = tunmock(mock);
     expect(res).toEqual({ a: expect.any(Function) });
     expect(res.a.b.c).toBe(null);
     expect(res.a(1).b.c).toEqual([1]);
@@ -510,7 +721,7 @@ describe('-------------------- mock behavior ----------------------', () => {
 
   test('mock should allow to call function and then assign function properties', () => {
     // ARRANGE
-    const mock = tm.mock();
+    const mock = tmock();
 
     // ACT
     mock.a(1).b.c = [1];
@@ -519,7 +730,7 @@ describe('-------------------- mock behavior ----------------------', () => {
     // ASSERT
     expect(mock.a(1).b.c).toEqual([1]);
     expect(mock.a.b.c).toBe(null);
-    const res = tm.unmock(mock);
+    const res = tunmock(mock);
     expect(res).toEqual({ a: expect.any(Function) });
     expect(res.a(1).b.c).toEqual([1]);
     expect(res.a.b.c).toBe(null);
@@ -527,7 +738,8 @@ describe('-------------------- mock behavior ----------------------', () => {
 
   test('should call both original function and external mock', () => {
     // ARRANGE
-    const mock = tmock([{ f: jest.fn() }], { externalMock: jestMock });
+    tlocalopt({ externalMock: jestMock });
+    const mock = tmock({ f: jest.fn() });
     // tset(mock, [(m) => m.f(7), 3]); // TODO: explore this case
 
     // ACT
@@ -552,9 +764,10 @@ describe('-------------------- mock behavior ----------------------', () => {
 
   test('should unmock mocks in arguments passed to spies', () => {
     // ARRANGE
+    tlocalopt({ externalMock: jestMock });
     const mock = tmock([{
       f1: jest.fn((arg) => arg),
-    }], { externalMock: jestMock });
+    }]);
 
     // ACT
     const result = mock.f1(mock);
@@ -575,6 +788,61 @@ describe('-------------------- mock behavior ----------------------', () => {
 });
 
 describe('-------------------- tstub ----------------------', () => {
+  test.skip('Stub static type checking should work for non-generic form', () => {
+    tstub([m => m.anyProp, 7]); // ok
+    tstub([ [m => m.anyProp, 7] ]); // ok
+    tstub([
+      [m => m.prop, tstub([nested => nested.q, 1])],
+    ]); // ok
+    tstub({ anyProp: 7 }); // ok
+    tstub([
+      [m => m.prop, 1],
+      { anyProp: 7 },
+    ]); // ok
+
+    // // UNCOMMENT THE WHOLE COMMENTED BLOCK TO TEST STATIC TYPE CHECKING
+    // tstub([() => 1]); // type error
+    // tstub([ [7] ]); // type error
+    // tstub('s'); // type error
+  });
+
+  test.skip('Mock static type checking should work for generic form', () => {
+    // ARRANGE
+    interface I {
+      existingProp1: number;
+      existingProp2: number;
+    }
+
+    // ACT + ASSERT
+    tstub<I>([m => m.existingProp1, 7]); // ok
+    tstub<I>([ [m => m.existingProp1, 7] ]); // ok
+    tstub<I>([ { existingProp1: 7 } ]); // ok
+    tstub<I>([
+      [m => m.existingProp1, 7],
+      { existingProp2: 7 },
+    ]); // ok
+
+    // // UNCOMMENT THE WHOLE COMMENTED BLOCK TO TEST STATIC TYPE CHECKING
+    // tstub<I>('s'); // type error
+    // tstub<I>([m => m.nonExistingProp, 7]); // type error
+    // tstub<I>({
+    //   existingProp1: 1, // ok
+    //   nonExistingProp: 1, // type error
+    // });
+    // tstub<I>([
+    //   [(m) => m.existingProp1, 1], // ok
+    //   [(m) => m.nonExistingProp, 1], // type error
+    // ]);
+    // tstub<I>([
+    //   [(m) => m.nonExistingProp, 1], // type error
+    //   [(m) => m.existingProp1, 1], // ok
+    //   {
+    //     existingProp: 1, // ok
+    //     nonExistingProp: 1, // type error
+    //   },
+    // ]);
+  });
+
   test('should accept object as argument', () => {
     // ACT
     const stub = tstub({ a: 1 });
@@ -585,7 +853,7 @@ describe('-------------------- tstub ----------------------', () => {
 
   test('should accept init couple as argument', () => {
     // ACT
-    const stub = tm.stub([(s) => s.a, 1]);
+    const stub = tstub([(s) => s.a, 1]);
 
     // ASSERT
     expect(stub).toEqual({ a: 1 });
@@ -598,9 +866,9 @@ describe('-------------------- tstub ----------------------', () => {
       b: string;
     }
     // ASSERT
-    tm.stub<string>([(s) => s.length, 1]);
-    tm.stub<I>({ b: '1' });
-    tm.stub<I>([
+    tstub<string>([(s) => s.length, 1]);
+    tstub<I>({ b: '1' });
+    tstub<I>([
       { a: 1 },
       [(s) => s.b, 'a'],
     ]);
@@ -613,7 +881,7 @@ describe('-------------------- tstub ----------------------', () => {
     jest.fn(),
   ])('should replace old stub values with new ones %#', (originalValue) => {
     // ACT
-    const stub = tm.stub([
+    const stub = tstub([
       {
         a: originalValue,
       },
@@ -629,7 +897,7 @@ describe('-------------------- tstub ----------------------', () => {
 
   test('should replece scalar with object when setting up property of scalar', () => {
     // ACT
-    const stub = tm.stub([
+    const stub = tstub([
       [(s) => s.a, 1],
       [(s) => s.a.aa, 'aa'],
     ]);
@@ -640,7 +908,7 @@ describe('-------------------- tstub ----------------------', () => {
 
   test('should replece value constructed by multiple setups with new value', () => {
     // ACT
-    const stub = tm.stub([
+    const stub = tstub([
       [(s) => s.a.aa, {} ],
       [(s) => s.a.aa.aaa, 1 ],
       [(s) => s.a.bb, 3 ],
@@ -653,7 +921,7 @@ describe('-------------------- tstub ----------------------', () => {
 
   test('should complement object through successive setups', () => {
     // ACT
-    const stub = tm.stub([
+    const stub = tstub([
       {
         a: {
           aa: 1,
@@ -689,7 +957,7 @@ describe('-------------------- tstub ----------------------', () => {
 
   test('should return values defined per sets of arguments', () => {
     // ACT
-    const stub = tm.stub([
+    const stub = tstub([
       [(s) => s.f(), 1],
       [(s) => s.f(1), 3],
       [(s) => s.f(1, 3), 5],
@@ -703,14 +971,7 @@ describe('-------------------- tstub ----------------------', () => {
 
   test('should return value defined for TM_ANY for set of arguments not mapped to return value', () => {
     // ACT
-    // expect(mock.f(3)).toBe('333');
-    // expect(mock.f(5)).toBe('555');
-    // expect(mock.f(tm.ANY.toString())).toBe('777');
-    // expect(mock.f()).toBe('aaa');
-    // expect(mock.f(777)).toBe('aaa');
-    // expect(mock.f(3, 5)).toBe('aaa');
-
-    const stub = tm.stub([
+    const stub = tstub([
       [s => s.f(1, 3), 1],
       [s => s.f(tm.ANY.toString()), 3],
       [s => s.f(TM_ANY), 5],
@@ -726,7 +987,7 @@ describe('-------------------- tstub ----------------------', () => {
 
   test('should return undefined when neither set of arguments mapped to return value nor value for TM_ANY is provided', () => {
     // ACT
-    const stub = tm.stub([
+    const stub = tstub([
       [(s) => s.f(), 1],
     ]);
 
@@ -737,7 +998,7 @@ describe('-------------------- tstub ----------------------', () => {
 
   test('should complement return values and function properties through successive setups', () => {
     // ACT
-    const stub = tm.stub([
+    const stub = tstub([
       [(s) => s.f.prop1, '1'],
       [(s) => s.f(1), { b: 3 }],
       [(s) => s.f(1).a.aa.aaa1, 5],
@@ -768,7 +1029,7 @@ describe('-------------------- tstub ----------------------', () => {
 
   test('should be able to create callable stub', () => {
     // ACT
-    const stub = tm.stub([
+    const stub = tstub([
       [s => s(), 1],
     ]);
 
@@ -1058,7 +1319,7 @@ describe('-------------------- tset ---------------------', () => {
     new RegExp(''),
   ])('should return mock values for scalars, objects, arrays and classes', (value) => {
     // ARRANGE
-    const mock = tm.mock();
+    const mock = tmock();
     tset(mock, [(m) => m.a, value]);
 
     // ACT
@@ -1107,7 +1368,7 @@ describe('-------------------- tset ---------------------', () => {
       jestFunction();
       return 1;
     };
-    const mock = tm.mock();
+    const mock = tmock();
     tset(mock, [(m) => m.a, f]);
 
     // ACT
@@ -1121,7 +1382,7 @@ describe('-------------------- tset ---------------------', () => {
 
   test('should override values', () => {
     // ARRANGE
-    const mock = tm.mock([{ a: 0 }]);
+    const mock = tmock([{ a: 0 }]);
 
     // ACT + ASSERT
     tset(mock, [(m) => m.a, 1]);
@@ -1204,7 +1465,7 @@ describe('-------------------- tset ---------------------', () => {
 
   test('should mock call result per set of call arguments', () => {
     // ARRANGE
-    const mock = tm.mock();
+    const mock = tmock();
 
     // ACT
     tset(mock, [(m) => m.f(), 'f()']);
@@ -1306,7 +1567,7 @@ describe('-------------------- tset ---------------------', () => {
     ...FUNCTIONS_THAT_RETURN_DFAULT_NUMERIC_VALUE,
   ])('should accept stubs produced by tstub %#', (stubRootReplacement) => {
     // ARRANGE
-    const stub = tm.stub([s => s, stubRootReplacement]);
+    const stub = tstub([s => s, stubRootReplacement]);
 
     // ACT + ASSERT
     expect(() => tset(stub, [s => s.prop, 'val'])).not.toThrow();
@@ -1404,7 +1665,7 @@ describe('------------------- treset --------------------', () => {
   test('should erase mocks at any nesting levels and clear mock touches from unmocked result', () => {
     // ARRANGE
     // Create mock.
-    const mock = tm.mock([{
+    const mock = tmock([{
       untouched: 7,
       replaced: true,
     }]);
@@ -1420,7 +1681,7 @@ describe('------------------- treset --------------------', () => {
     mock.added = 'value';
 
     // ACT + ASSERT
-    let res = tm.unmock(mock);
+    let res = tunmock(mock);
     expect(res).toEqual({
       untouched: 7,
       replaced: false,
@@ -1441,8 +1702,8 @@ describe('------------------- treset --------------------', () => {
       },
     });
 
-    tm.reset(mock.a.aa);
-    res = tm.unmock(mock);
+    treset(mock.a.aa);
+    res = tunmock(mock);
     expect(res).toEqual({
       untouched: 7,
       replaced: false,
@@ -1460,8 +1721,8 @@ describe('------------------- treset --------------------', () => {
       },
     });
 
-    tm.reset(mock.a);
-    res = tm.unmock(mock);
+    treset(mock.a);
+    res = tunmock(mock);
     expect(res).toEqual({
       untouched: 7,
       replaced: false,
@@ -1473,8 +1734,8 @@ describe('------------------- treset --------------------', () => {
       },
     });
 
-    tm.reset(mock);
-    res = tm.unmock(mock);
+    treset(mock);
+    res = tunmock(mock);
     expect(res).toEqual({
       untouched: 7,
       replaced: true,
@@ -1484,7 +1745,7 @@ describe('------------------- treset --------------------', () => {
   test('should erase mocks first touched by sut then setup by tset', () => {
     // ARRANGE
     // Create mock.
-    const mock = tm.mock();
+    const mock = tmock();
 
     // Touch in sut.
     mock.replaced1 = 'replaced1';
@@ -1504,7 +1765,7 @@ describe('------------------- treset --------------------', () => {
     });
 
     treset(mock);
-    res = tm.unmock(mock);
+    res = tunmock(mock);
     expect(res).toEqual({
       replaced1: 'original1',
       replaced2: 'original2',
@@ -1513,7 +1774,7 @@ describe('------------------- treset --------------------', () => {
 
   test('should erase return values per arguments added by sut', () => {
     // ARRANGE
-    const mock = tm.mock([
+    const mock = tmock([
       [m => m.f(1), 1],
     ]);
 
@@ -1562,9 +1823,9 @@ describe('------------------- treset --------------------', () => {
 
   test('should erase mock calls', () => {
     // ARRANGE
-    treset();
-    const mock1 = tmock('mock1', [{ f: function fff() {} }], { simplifiedOutput: false });
-    const mock2 = tmock('mock2', { simplifiedOutput: false });
+    tlocalopt({ simplifiedOutput: false });
+    const mock1 = tmock('mock1', [{ f: function fff() {} }]);
+    const mock2 = tmock('mock2');
 
     // ACT
     const mock3 = mock1.prop.f(Infinity);
@@ -1676,7 +1937,8 @@ describe('----------------- tinfo ------------------', () => {
       jest.fn(() => DFAULT_NUMERIC_VALUE),
     ])('should setup externalMock property for functions when external mock is set %#', (initialStub) => {
       // ACT
-      const mock = tm.mock([{ f: initialStub }], { externalMock: jestMock });
+      tlocalopt({ externalMock: jestMock });
+      const mock = tmock([{ f: initialStub }]);
 
       // ASSERT
       expect(tinfo(mock.f).externalMock).toBeDefined();
@@ -1687,7 +1949,7 @@ describe('----------------- tinfo ------------------', () => {
       jest.fn(() => DFAULT_NUMERIC_VALUE),
     ])('should not setup externalMock property for functions when external mock is not set %#', (initialStub) => {
       // ACT
-      const mock = tm.mock([{ f: initialStub }]);
+      const mock = tmock([{ f: initialStub }]);
 
       // ASSERT
       expect(tinfo(mock.f).externalMock).toBeUndefined();
@@ -1872,9 +2134,10 @@ describe('----------------- tinfo ------------------', () => {
 
     test('should return unmocked argument-mock passed to spy for both .calls and .externalMock.mock.calls', () => {
       // ARRANGE
+      tlocalopt({ externalMock: jestMock });
       const mock = tmock([{
         f: jest.fn(),
-      }], { externalMock: jestMock });
+      }]);
       const mockPassedToSpy = tmock('mock passed to spy');
       mockPassedToSpy.a = 7;
 

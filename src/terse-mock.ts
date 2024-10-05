@@ -48,9 +48,10 @@ function mockProxyToString(data: any, simplify: boolean) {
       result = '<...>';
     }
   }
-  return result || '<unnamed mock>';
+  return result || '';
 }
 
+// FIXME: simplificationThreshold is not considered!
 function toString(data: any, simplify: boolean = false) {
   if (isArray(data)) {
     return simplify ? '[...]' : '[' + data.map((item) => toString(item)).join(', ') + ']';
@@ -244,23 +245,23 @@ type MockFunctionContext = {
   argsToReturnValues: { [key: string]: any };
 }
 
-type TmockBaseOptions = {
+type TBaseOpt = {
   automock: boolean;
-  simplifiedOutput: boolean;
+  simplifiedOutput: boolean; // TODO: rename to collapseLongValues
+  simplificationThreshold: number; // TODO: rename to collapseThreshold
   externalMock?: IExternalMock;
   exposeFunctionNames: boolean;
   autoValuesPrefix: string;
 }
 
-export type TmockInstanceOptions = Partial<TmockBaseOptions>;
-
-export type TmockGlobalOptions = TmockBaseOptions & {
-  simplificationThreshold: number;
+export type TGlobalOpt = TBaseOpt & {
   defaultMockName: string;
   quoteSymbol: string;
 }
 
-type TmockFullOptions = TmockGlobalOptions & TmockInstanceOptions;
+export type TLocalOpt = Partial<TBaseOpt>;
+
+type TFullOpt = TGlobalOpt & TLocalOpt;
 
 export type MockInfo = {
   externalMock: any;
@@ -334,9 +335,9 @@ class PathBuilder {
   private path_: string  = '';
   private latestPathChunk_: ObjectPropertyType  = '';
   private pathToBeShown_ = '';
-  private options_: Partial<TmockFullOptions>;
+  private options_: Partial<TFullOpt>;
 
-  constructor(groupId: string, pathToBeShown: string, options: Partial<TmockFullOptions> = {}) {
+  constructor(groupId: string, pathToBeShown: string, options: Partial<TFullOpt> = {}) {
     this.groupId_ = groupId;
     this.path_ = '';
     this.pathToBeShown_ = pathToBeShown;
@@ -346,16 +347,7 @@ class PathBuilder {
   public withCall(args: any[]): PathBuilder {
     const latestPathChunk = argsToString(args);
 
-    // let simplifiedOutput;
-    // if (this.options_.simplifiedOutput !== undefined) {
-    //   simplifiedOutput = this.options_.simplifiedOutput;
-    // } else if (localOptions.simplifiedOutput !== undefined) {
-    //   simplifiedOutput = localOptions.simplifiedOutput;
-    // } else {
-    //   simplifiedOutput = globalOptions.simplifiedOutput;
-    // }
-    // const pathToBeShownChunk = !simplifiedOutput ? latestPathChunk : argsToString(args, true);
-    const pathToBeShownChunk = !this.options_.simplifiedOutput ? latestPathChunk : argsToString(args, true);
+    const pathToBeShownChunk = !this.options_.simplifiedOutput ? latestPathChunk : argsToString(args, true); // TODO: pass options to argsToString, make separate simplified* options for objects, arrays, mocks
     const newPathBuilder = new PathBuilder(
       this.groupId_,
       this.pathToBeShown_ + pathToBeShownChunk,
@@ -589,7 +581,7 @@ class MockTree {
   }
 
   // Convert tree to hierarchy of objects and functions based on node paths and node values.
-  toObject(path: string, options: TmockFullOptions): Undefinable {
+  toObject(path: string, options: TFullOpt): Undefinable {
     const node = this.tree[path];
     if (node.hasValue()) {
       let value = node.getValue();
@@ -652,6 +644,7 @@ export function tunmock(_data) {
   }
 }
 
+// TODO: make tinfo accept two arguments like (mock, m => m.p.f5) so you dont't have to pass single (mock.p.f5) and mutate mock.
 export function tinfo(mockOrSpy?: any): MockInfo {
   if (!mockOrSpy) {
     return {
@@ -682,9 +675,10 @@ export function treset(mock?: any) {
   }
   Object.values(sutMockTrees).forEach((mockTree) => mockTree.deleteSubtree());
   totalCallLog = [];
+  localOptions = {};
 }
 
-function applyCouplesToStub(stub, initCouples: InitCouple[]) {
+function applyCouplesToStub(stub, initCouples: TInitCouple[]) {
   let returnValue = stub;
 
   initCouples.forEach(initCouple => {
@@ -715,7 +709,7 @@ function applyCouplesToStub(stub, initCouples: InitCouple[]) {
 }
 
 export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProxy: T) => any, any] | ([(mockProxy: T) => any, any])[]) {
-  const initCouples = (isInitCouple(initCoupleOrCouples) ? [initCoupleOrCouples] : initCoupleOrCouples) as InitCouple[];
+  const initCouples = (isInitCouple(initCoupleOrCouples) ? [initCoupleOrCouples] : initCoupleOrCouples) as TInitCouple[];
   if (isMockProxy(stubWrapperOrMock)) {
     stubWrapperOrMock(SET_MOCK_PROXY_RETURN_VALUES, initCouples);
   } else if (isStub(stubWrapperOrMock)) {
@@ -728,30 +722,35 @@ export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProx
   }
 }
 
-let globalOptions: TmockGlobalOptions = {
+let globalOptions: TGlobalOpt = {
   automock: true,
+  simplifiedOutput: true, // Should this be done by default?
   simplificationThreshold: 40,
-  simplifiedOutput: true,
   defaultMockName: '<mock>',
   quoteSymbol: '\'',
   exposeFunctionNames: false,
   autoValuesPrefix: '',
 };
 
-export function tglobalopt(options?: Partial<TmockGlobalOptions>): TmockGlobalOptions {
+let localOptions: TLocalOpt = {};
+
+export function tglobalopt(options?: Partial<TGlobalOpt>): TGlobalOpt {
   if (options) {
     globalOptions = {...globalOptions, ...deepClone(options)};
   }
   return globalOptions;
 }
 
-export type InitCouple<T = any> = [(mockProxy: T) => any, any];
-//export type InitTriple = [(mockProxy: any) => any, any, number];
-export type InitObject = {[index: string]: any};
-type InitObjectOrInitCouple<T = any> =
-  undefined extends T ? (InitObject | InitCouple) : ((T extends {} ? Partial<T> : InitCouple<T>) | InitCouple<T>);
+export function tlocalopt(options?: Partial<TGlobalOpt>): TLocalOpt {
+  if (options) {
+    localOptions = {...localOptions, ...deepClone(options)};
+  }
+  return localOptions;
+}
 
-export type AnyInitializer = InitObject | InitCouple;
+export type TInitCouple<T = void> = T extends void ? [(mockProxy: any) => any, any] : [(mockProxy: T) => any, any];
+export type TInitObject<T = void> = T extends void ? { [x:string]: Object | undefined | null } : Partial<T>;
+export type TInit<T = void> = TInitObject<T> | TInitCouple<T> | (TInitObject<T> | TInitCouple<T>)[];
 
 function getStubInitializationProxy(proxyContext: StubInitializationProxyContext) {
   const initializationProxy = new Proxy(defaultProxyTarget, {
@@ -838,7 +837,7 @@ function getMockInitializationProxy(proxyContext: MockInitializationProxyContext
   }
 }
 
-function applyCouplesToMock(initCouples: InitCouple[], pathBuilder: PathBuilder, options: TmockGlobalOptions) {
+function applyCouplesToMock(initCouples: TInitCouple[], pathBuilder: PathBuilder, options: TGlobalOpt) {
   const userMockTree = userMockTrees[pathBuilder.groupId];
   initCouples.forEach(initCouple => {
     const proxyContext: MockInitializationProxyContext = {
@@ -886,7 +885,7 @@ function getFinalNode(tree: MockTree, pathBuilder: PathBuilder, callInfo?: CallI
   }
 }
 
-function traversePropOrCall(pathBuilder: PathBuilder, options: TmockGlobalOptions, callInfo?: CallInfo) {
+function traversePropOrCall(pathBuilder: PathBuilder, options: TGlobalOpt, callInfo?: CallInfo) {
   if (callInfo) {
     totalCallLog.push(callInfo);
   }
@@ -913,7 +912,7 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: TmockGlobalOption
   return getSutProxy(pathBuilder, options);
 }
 
-function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
+function getSutProxy(pathBuilder: PathBuilder, options: TGlobalOpt) {
   const userMockTree: MockTree = userMockTrees[pathBuilder.groupId];
   const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
   const path = pathBuilder.path;
@@ -983,60 +982,46 @@ function getSutProxy(pathBuilder: PathBuilder, options: TmockGlobalOptions) {
   return sutProxy;
 }
 
-function parseTmockArgs(nameOrInitOrOptionsArg?: string | InitCouple | AnyInitializer[] | TmockInstanceOptions,
-  initOrOptionsArg?: InitCouple | AnyInitializer[] | TmockInstanceOptions,
-  optionsArg?: TmockInstanceOptions)
-{
+function parseTmockArgs<T>(nameOrInitializersArg?: NameOrInitializerArgType<T>, initializersArg?: InitializerArgType<T>) {
   let name: string | undefined;
-  let initializers: AnyInitializer[] | undefined;
-  let options: TmockInstanceOptions | undefined;
-  const multipleOptionsArgsErrorMessage = 'tmock: multiple options arguments not allowed';
-  if (nameOrInitOrOptionsArg !== undefined) {
-    if (isString(nameOrInitOrOptionsArg)) {
-      name = nameOrInitOrOptionsArg as string;
-    } else if (isArray(nameOrInitOrOptionsArg)) {
-      initializers = getInitializers(nameOrInitOrOptionsArg);
+  let initializers: (TInitCouple | TInitObject)[] | undefined;
+  if (nameOrInitializersArg !== undefined) {
+    if (isString(nameOrInitializersArg)) {
+      name = nameOrInitializersArg as string;
     } else {
-      options = nameOrInitOrOptionsArg as TmockInstanceOptions;
+      initializers = unifyInitializers(nameOrInitializersArg);
     }
   }
-  if (initOrOptionsArg) {
-    if (isArray(initOrOptionsArg)) {
-      if (initializers) {
-        throw new Error('tmock: multiple initializer arguments not allowed');
-      }
-      initializers = getInitializers(initOrOptionsArg);
-    } else {
-      if (options) {
-        throw new Error(multipleOptionsArgsErrorMessage);
-      }
-      options = initOrOptionsArg as TmockInstanceOptions;
+  if (initializersArg) {
+    if (initializers) {
+      throw new Error('tmock: multiple initializer arguments not allowed');
     }
+    initializers = unifyInitializers(initializersArg);
   }
-  if (optionsArg) {
-    if (options) {
-      throw new Error(multipleOptionsArgsErrorMessage);
-    }
-    options = optionsArg;
-  }
-  return { name, initializers, options };
+  return { name, initializers };
 
-  function getInitializers(arg): AnyInitializer[] {
-    // If first array element is a function then it is an Initializer. Put it to array to create Initializers shape.
-    return (isInitCouple(arg) ? [arg] : arg) as AnyInitializer[];
+  // TODO: reuse
+  // TODO: add trasformation InitObject -> InitCouples ?
+  function unifyInitializers(arg): (TInitCouple | TInitObject)[] {
+    return (isInitCouple(arg) || isObject(arg) ? [arg] : arg);
   }
 }
 
-export function tmock<T = any>(
-  nameOrSetupOrOptionsArg?: string | InitObjectOrInitCouple<T>[] | TmockInstanceOptions,
-  setupOrOptionsArg?: InitObjectOrInitCouple<T>[] | TmockInstanceOptions,
-  optionsArg?: TmockInstanceOptions): T
-{
-  const parsedArgs = parseTmockArgs(nameOrSetupOrOptionsArg, setupOrOptionsArg, optionsArg);
+// Inspired by https://stackoverflow.com/questions/67824800/typescript-generic-use-default-value-only
+type TypeOrVoid<T> = T extends void ? void : T;
+type InitializerArgType<T> = TInit<TypeOrVoid<T>>;
+type NameOrInitializerArgType<T> = string | InitializerArgType<T>;
 
-  const options: TmockFullOptions = {
+export function tmock<T = void>(
+  nameOrInitializerArg?: NameOrInitializerArgType<T>,
+  initializerArg?: InitializerArgType<T>): T extends void ? any : T
+{
+
+  const parsedArgs = parseTmockArgs<T>(nameOrInitializerArg, initializerArg);
+
+  const options: TFullOpt = {
     ...globalOptions,
-    ...parsedArgs.options,
+    ...localOptions,
   };
   if (parsedArgs.name !== undefined) {
     options.defaultMockName = parsedArgs.name;
@@ -1051,11 +1036,12 @@ export function tmock<T = any>(
   userMockTrees[mockId] = userMockTree;
   sutMockTrees[mockId] = sutMockTree;
 
-  const initCouples: InitCouple[] =
-    parsedArgs.initializers?.filter(initializer => isArray(initializer) && initializer.length === 2) as InitCouple[] || [];
+  const initCouples: TInitCouple[] =
+    parsedArgs.initializers?.filter(initializer => isArray(initializer) && (initializer as Array<any>).length === 2) as TInitCouple[] ?? [];
 
-  const initObject = parsedArgs.initializers?.find(initializer => isObject(initializer)) || {};
+  const initObject = parsedArgs.initializers?.find(initializer => isObject(initializer)) ?? {};
   // Make init couples from init object.
+  // TODO: apply in unifyInitializers
   for (const [prop, val] of Object.entries(initObject)) {
     initCouples.unshift([(p) => p[prop], val]);
   }
@@ -1069,24 +1055,24 @@ export function tmock<T = any>(
   return sutMockProxy;
 }
 
-export function tstub<T = any>(initializer: InitObjectOrInitCouple<T> | InitObjectOrInitCouple<T>[]): T {
-  let initializers: (InitObject | InitCouple)[];
+// TODO: reuse unifyInitializers
+export function tstub<T = void>(initializer: InitializerArgType<T>): T extends void ? any : T {
+  let initializers: (TInitObject | TInitCouple)[];
   if (!isArray(initializer)) {
-    initializers = [initializer as InitObject];
+    initializers = [initializer as TInitObject];
   } else if (isInitCouple(initializer)) {
-    initializers = [initializer as InitCouple];
+    initializers = [initializer as TInitCouple];
   } else {
-    initializers = initializer as (InitObject | InitCouple)[];
+    initializers = initializer as (TInitObject | TInitCouple)[];
   }
 
   const stubFromInitializer = initializers.find(initializer => isObject(initializer));
   let stub = deepClone(stubFromInitializer) ?? {};
 
-  const initCouples: InitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as InitCouple[] | [];
-  if (initCouples) {
-    stub = applyCouplesToStub(stub, initCouples);
-  }
+  const initCouples: TInitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as TInitCouple[];
+  stub = applyCouplesToStub(stub, initCouples);
 
+  // TODO: is isFunction(stub) possible ?
   if (isObjectOrArrayOrClass(stub) || isFunction(stub)) {
     Object.defineProperty(stub, IS_A_STUB, { // Make stubs identifiable by setting non-enumerable property that is not exposed to user.
       value: true,
@@ -1105,4 +1091,5 @@ export default {
   unmock: tunmock,
   info: tinfo,
   globalopt: tglobalopt,
+  localopt: tlocalopt,
 };

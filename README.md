@@ -18,7 +18,7 @@ yarn add --dev terse-mock
 ```
 ## Introduction
 terse-mock is intended to use as an addition to existing test frameworks such as [Jest](https://jestjs.io/).  
-The module mainly contains functions for creating and managing mocks/stubs and getting statistics on mocks usage. The most useful of them are:  
+The module provides a number of functions:  
 
 <table style="line-height:0.7em">
   <tr style="border-bottom-style:hidden">
@@ -35,113 +35,152 @@ The module mainly contains functions for creating and managing mocks/stubs and g
   </tr>
   <tr style="border-bottom-style:hidden">
     <td style="color:DarkRed">treset</td>
-    <td>clears mock touches, mock calls and mock values set by sut</td>
+    <td>clears mock touches, mock calls and mock values set by sut; clears local options</td>
   </tr>
   <tr style="border-bottom-style:hidden">
     <td style="color:DarkRed">tunmock</td>
-    <td>removes mocks from data</td>
+    <td>removes mock proxies from data</td>
   </tr>
   <tr style="border-bottom-style:hidden">
     <td style="color:DarkRed">tinfo</td>
-    <td>provides information on mock or spy</td>
+    <td>provides information on mock usage</td>
+  </tr>
+  <tr style="border-bottom-style:hidden">
+    <td style="color:DarkRed">tglobalopt, tlocalopt</td>
+    <td>sets module options</td>
   </tr>
 </table>
 
-terse-mock is covered and tested with Jest so Jest tests will be used in examples below.
+terse-mock is tested with Jest so Jest tests are used in examples below.
 ### Typical usage
 ```javascript
 import { tmock } from 'terse-mock';
 
 test('some test', () => {
   // ARRANGE
-  const mock = tmock('name', [ // create mock
-    [m => m.f('some value').data.val, 7], // setup return values
+  const mock = tmock([ // create mock
+    [m => m.prop1.prop2, true], // setup mock value
+    [m => m.f('some value').prop3, 7], // setup mock value
+    [m => m.f('some other value'), {}], // setup mock value
   ]);
 
   // ACT
-  const res = tunmock(sut(mock)); // pass mock to system under test, unmock result
+  const res = sut(mock); // pass mock to system under test
 
   // ASSERT
-  expect(res).toEqual(expectedRes); // check expectations
-}
+  const unmockedRes = tunmock(res); // remove possible proxies (optional but strongly recommended)
+  expect(unmockedRes).toEqual(expectedResult); // check expectations
+});
 ```
-Unmocking is required to turn result into plain js type before checking expectations.
 ## Features
 - [Deep automocking](#deep-automocking)
-- [Easy setting mock values](#easy-setting-mock-values)
+- [Setting mock values](#setting-mock-values)
 - [Stubs](#stubs)
 - [Creating functions that return different values per set of arguments](#creating-functions-that-return-different-values-per-set-of-arguments)
 - [Interface mocks](#interface-mocks)
 - [Call history](#call-history)
 - [Automatic spies](#automatic-spies)
-- [Using external mocks](#using-external-mocks)
+- [Using with 3rd party mocks](#using-with-3rd-party-mocks)
 - [Module mocks](#module-mocks)
 - [Resetting mocks](#resetting-mocks)
-- [And more](#and-more)
+- [Other](#other)
   - [Alternative way of setting mock values](#alternative-way-of-setting-mock-values)
   - [Import all at once](#import-all-at-once)
   - [Nested mocks](#nested-mocks)
-  - [Сall history display options](#call-history-display-options)
-  - [Global module options](#global-module-options)
+  - [Collapsing long arguments](#collapsing-long-arguments)
+  - [Module options](#module-options)
 
 ## Deep automocking
-By default mocks allows to access properties and call functions at any nesting level without first initializing the return values.
+Normally one need to setup all mock values to get sut work.
 
 Suppose we have a [SUT](https://en.wikipedia.org/wiki/System_under_test):
 ```javascript
-function sut(data) {
-  const r1 = data.getSomething(true).doSomething();
-  const r2 = r1.property === 1 ? data.getSomethingElse('a') : null;
-  const r3 = data.getSomethingElse('b', true);
-  r3.value = 7;
+function sut(obj) {
+  const r1 = obj.getSomething(true).doSomething();
+  const r2 = r1 ? obj.getSomethingElse('a').length : null;
+  const r3 = obj.getSomethingElse('b', true);
 
   return {
-    prop1: r1.property,
+    prop1: r1,
     prop2: r2,
     prop3: r3,
   };
 }
+
 ```
-The shortest test could be like:
+The test for the whole return value could be like:
 ```javascript
-test('shortest test demo', () => {
+test('should return expected result under certain conditions', () => {
   // ARRANGE
-  const mock = tmock('data');
+  const mock = tmock([
+    [m => m.getSomething(true).doSomething(), true],
+    [m => m.getSomethingElse('a').length, 1],
+    [m => m.getSomethingElse('b', true), 'something'],
+  ]);
 
   // ACT
-  const res = tunmock(sut(mock));
+  const res = sut(mock);
 
   // ASSERT
-  expect(res).toEqual({
-    prop1: 'data.getSomething(true).doSomething().property',
-    prop2: null,
-    prop3: {
-      value: 7,
-    },
+  expect(tunmock(res)).toEqual({
+    prop1: true,
+    prop2: 1,
+    prop3: 'something',
   });
+});
+```
+Auto-mocking feature allows you to skip initialisation of mock values without breaking the sut.  
+Let's say you want to test only prop1 and don't care about prop2 and prop3.  
+Then the test could be like:
+```javascript
+test('should prop1 have some value under some conditions', () => {
+  // ARRANGE
+  const mock = tmock([
+    [m => m.getSomething(true).doSomething(), true],
+  ]);
+
+  // ACT
+  const res = sut(mock);
+
+  // ASSERT
+  expect(tunmock(res).prop1).toBe(true);
+});
+```
+Or even
+```javascript
+test('should prop1 have some value under some conditions, shortest test', () => {
+  // ARRANGE
+  const mock = tmock();
+
+  // ACT
+  const res = sut(mock);
+
+  // ASSERT
+  expect(tunmock(res).prop1).toBe('<mock>.getSomething(true).doSomething()');
 });
 ```
 ```
 Test Suites: 1 passed, 1 total
 ```
-## Easy setting mock values
+Here prop1 contains the path it got the value from.
+## Setting mock values
 For the SUT defined [above](#deep-automocking) make mock return different values for property so we could test all code paths:
 ```javascript
 test.each([
-  [1, 'something else'],
-  [0, null],
-])('should return something else in prop2 when property is 1 otherwise null', (property, expectedResult) => {
+  ['should prop2 have some value under some conditions', true, 10],
+  ['should prop2 be null under some other conditions', false, null],
+])('%s', (__, doSomethingResult, expectedResult) => {
   // ARRANGE
   const mock = tmock([
-    [m => m.getSomething(true).doSomething().property, property],
-    [m => m.getSomethingElse('a'), 'something else'],
+    [m => m.getSomething(true).doSomething(), doSomethingResult],
+    [m => m.getSomethingElse('a').length, 10],
   ]);
 
   // ACT
-  const res = tunmock(sut(mock));
+  const res = sut(mock);
 
   // ASSERT
-  expect(res.prop2).toEqual(expectedResult);
+  expect(tunmock(res).prop2).toBe(expectedResult);
 });
 ```
 ## Stubs
@@ -189,7 +228,7 @@ Generic form of `tmock`/`tstub` is available if one wants to use benefits like s
 
 ![Static type checking and code completion](../media/static-type-check.jpg?raw=true)
 ## Call history
-The module keeps history of calling functions from the mock. The test below demonstrates how one can check call order and arguments passed to functions:
+terse-mock keeps history of function calls. The test below demonstrates how one can check call order and arguments passed to functions:
 ```javascript
 test('checking calls demo', () => {
   // ARRANGE
@@ -213,8 +252,9 @@ test('checking calls demo', () => {
   });
 });
 ```
+This also can be useful for debugging purposes to examine all calls fo mocked functions in sut.
 ## Automatic spies
-The module automatically creates spies for functions from mock return values added by `tmock` and `tset` (except functions from return values of other functions). Calls to spied functions get to call log and can be analyzed with `tinfo`.
+terse-mock automatically creates spies for js functions found in values passed to `tmock` and `tset`. Calls to this functions get to call log and can be analyzed with `tinfo`.
 ```javascript
 test('automatic spies demo', () => {
   // ARRANGE
@@ -223,45 +263,44 @@ test('automatic spies demo', () => {
       f: function (n) { return n > 7 },
     },
   };
-  const mock = tmock([
-    [m => m.obj, obj],
-  ]);
+  const mock = tmock([m => m.obj, obj]);
 
   // ASSERT
   expect(mock.obj.nestedObj.f(7)).toBe(false);
   expect(mock.obj.nestedObj.f(8)).toBe(true);
   expect(tinfo(mock).callLog).toEqual([
-    'mock.obj.nestedObj.f(7)',
-    'mock.obj.nestedObj.f(8)',
-  ])
-});```
-## Using external mocks
-terse-mock can use external mocks to analyze calls to mocked functions. To do so one need to create adapter for external mock by implementing `IExternalMock` interface provided by the module and pass the adapter to `tmock`. The test demonstrates how to use Jest mocks for call analyzing:
+    '<mock>.obj.nestedObj.f(7)',
+    '<mock>.obj.nestedObj.f(8)',
+  ]);
+});
+```
+## Using with 3rd party mocks
+terse-mock can use 3rd party mocks to analyze calls to mocked functions. To do so one need to create adapter for 3rd party mock by implementing `IExternalMock` interface provided by the module and pass the adapter to `tmock`. The test demonstrates how to use Jest mocks for call analyzing:
 ```javascript
 const jestMock: IExternalMock = {
   create: () => jest.fn(),
 };
 
-test('can use external mocks to analyze calls to mocked functions', () => {
+test('Use Jest function to analyze calls to mocked functions demo', () => {
   // ARRANGE
-  const mock = tmock({ externalMock: jestMock });
+  tlocalopt({ externalMock: jestMock });
+  const mock = tmock();
 
   // ACT
   mock.f(7);
 
   // ASSERT
-  const unmockedMock = tunmock(mock);
-  const externalMockForF = tinfo(unmockedMock.f).externalMock;
+  const externalMockForF = tinfo(mock.f).externalMock;
   expect(externalMockForF).toBeCalledTimes(1);
   expect(externalMockForF).toBeCalledWith(7);
 });
 ```
-Also external mocks can be used as return values for terse-mock mocks:
+3rd party mocks can also be used as return values for terse-mock mocks:
 ```javascript
-test('can use external mock as return value', () => {
+test('Using Jest function as mock value demo', () => {
   // ARRANGE
   const jestFn = jest.fn();
-  const mock = tmock([{ f: jestFn }]);
+  const mock = tmock({ f: jestFn });
 
   // ACT
   mock.f();
@@ -274,9 +313,9 @@ test('can use external mock as return value', () => {
 terse-mock mocks can be used as return values from [Jest module factory for jest.mock()](https://jestjs.io/docs/es6-class-mocks#calling-jestmock-with-the-module-factory-parameter)  
 Please note that the example below uses the [alternative way](#alternative-way-of-setting-mock-values) of setting mock values, as it is well suited for such cases.
 ```javascript
-jest.mock('some-module', () => tmock('some-module', [{
+jest.mock('some-module', () => tmock('some-module', {
   someFunction: () => 'some value',
-}]));
+}));
 ```
 Another example with expectation on mocked module function calls:
 ```javascript
@@ -293,13 +332,11 @@ test('should call someFunction', () => {
 });
 ```
 ## Resetting mocks
-Mock or any of its part can be reset by `treset`. That means that all mock touches, mock calls and mock values setup outside `tmock` and `tset` are cleared out from mock while values setup by `tmock` and `tset` persist. Calling `treset` with mock argument will also reset all nested mocks passed to `tmock` and `tset` as return values for this mock.
+Mock or any of its part can be reset by `treset`. That means that all mock touches, mock calls and mock values that were setup outside `tmock` and `tset` (e.g in sut) are cleared out from mock while values setup by `tmock` and `tset` persist. Calling `treset` with *mock* argument will also reset all nested mocks.
 ```javascript
 test('reset mocks demo', () => {
   // ARRANGE
-  const mock = tmock([
-    [m => m.p.pp, 'val'],
-  ]);
+  const mock = tmock([m => m.p.pp, 'val']);
 
   // Oparate mock in sut.
   mock.p = {}; // Replace value.
@@ -310,7 +347,7 @@ test('reset mocks demo', () => {
     a: {
       f: expect.any(Function),
     },
-    b: 'mock.b',
+    b: '<mock>.b',
   });
 
   // ACT
@@ -324,12 +361,12 @@ test('reset mocks demo', () => {
   });
 });
 ```
-## And more
-Some of minor features are listed below. See project [tests](https://github.com/ayartsev7/terse-mock/tree/main/tests) for the rest of features and examples.
+## Other
+Some of minor features are listed below. Examine [terse-mock tests](https://github.com/ayartsev7/terse-mock/tree/main/tests) for the rest of features and examples.
 ### Alternative way of setting mock values
-Besides setup tuples there is another way of passing mock return values: initialization object. This option is well suited for [module mocks](#module-mocks).
+Besides setup tuples there is another way of setting mock values: initialization object. This option is well suited for [module mocks](#module-mocks).
 ```javascript
-test('two ways of setting mock values', () => {
+test('two ways of setting mock values demo', () => {
   // ARRANGE
   const stub = tstub([
     { // with object
@@ -353,23 +390,22 @@ Instead of
 ```javascript
 import { tmock, TM_ANY } from 'terse-mock';
 
-const mock = tmock([[m => m.f(TM_ANY), 1]]);
+const mock = tmock([m => m.f(TM_ANY), 1]);
 ```
 one can write
 ```javascript
 import tm from 'terse-mock';
 
-const mock = tm.mock([[m => m.f(tm.ANY), 1]]);
+const mock = tm.mock([m => m.f(tm.ANY), 1]);
 ```
 ### Nested mocks
-terse-mock mocks can be freely used as mock return values of `tmock` and `tset`.
+terse-mock mocks can be freely used as mock values in `tmock` and `tset`.
 ```javascript
 test('nested mocks demo', () => {
   // ARRANGE
   const mock = tmock([
-    [m => m.nestedMock, tmock([
+    [m => m.nestedMock, tmock([ // nested mock
       [mm => mm.prop1, 1],
-      [mm => mm.prop2, 3],
     ])],
     [m => m.prop, 'val'],
   ]);
@@ -377,19 +413,18 @@ test('nested mocks demo', () => {
 
   // ASSERT
   expect(mock.nestedMock.prop1).toBe(1);
-  expect(mock.nestedMock.prop2).toBe(3);
   expect(mock.nestedMock.anotherProp).toBe(5);
   expect(tunmock(mock)).toEqual({
     nestedMock: {
       prop1: 1,
-      prop2: 3,
       anotherProp: 5,
     },
     prop: 'val',
   });
+});
 ```
-### Call history display options
-By default module machinery shorten string representation of mock touches - it collapses the contents of objects, arrays and long mocks in called functions arguments. If you need to see the contents of objects and arrays, you can use the `simplifiedOutput` option, which can be set both globally and for a specific mock.
+### Collapsing long arguments
+By default module machinery shorten string representation of mock touches - it collapses the contents of objects, arrays and long mocks in functions arguments. If you need to see the contents of collapsed data, you can use the `simplifiedOutput` option.
 ```javascript
 test('simplified output enabled/disabled demo', () => {
   // ARRANGE
@@ -405,7 +440,7 @@ test('simplified output enabled/disabled demo', () => {
   );
   const result = mock.f(
     1,
-    tmock().f('long enough string to make mock shorten in output'),
+    tmock().f('long enough string to make mock shorten it in output'),
     { a: 1 },
     [1, 2, 3],
   );
@@ -417,13 +452,15 @@ test('simplified output enabled/disabled demo', () => {
     `mock.f(1, mock.f('long enough string to make mock shorten in output'), {a: 1}, [1, 2, 3])`);
 });
 ```
-### Global module options
-`tglobalopt` allows to customise global module settings e.g. set default name for mocks or turn simplified output on/of
+### Module options
+`tglobalopt` allows to customise module settings e.g. to set default name for mocks or turn simplified output on/of.  
+`tlocalopt` allows to override module settings temporarly untill the `treset` is called.
+
 ```javascript
-test('global module options', () => {
+test('module options demo', () => {
   // ARRANGE
   tglobalopt({
-    defaultMockName: 'newName',
+    defaultMockName: 'newDefaultMockName',
   })
   const mock = tmock();
 
@@ -431,6 +468,6 @@ test('global module options', () => {
   const res = tunmock(mock.a);
 
   // ASSERT
-  expect(res).toBe('newName.a');
+  expect(res).toBe('newDefaultMockName.a');
 });
 ```
