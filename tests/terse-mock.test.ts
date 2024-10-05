@@ -221,52 +221,28 @@ describe('----------------------- options ------------------------', () => {
 
   describe('simplifiedOutput and simplificationThreshold', () => {
     test.each([
-      [1, false, '<mock>(1)'],
-      [1, true,  '<mock>(1)'],
-      [{}, false, '<mock>({})'],
-      [{}, true,  '<mock>({...})'],
-      [{ '0': 7 }, false, '<mock>({0: 7})'],
-      [{ '0': 7 }, true,  '<mock>({...})'],
-      [{ a: '7', b: 0 }, false, `<mock>({a: '7', b: 0})`],
-      [{ a: '7', b: 0 }, true,  '<mock>({...})'],
-      [[], false, '<mock>([])'],
-      [[], true,  '<mock>([...])'],
-      [[1], false, '<mock>([1])'],
-      [[1], true,  '<mock>([...])'],
-      [[`1`, true, {}], false, `<mock>(['1', true, {}])`],
-      [[`1`, true, {}], true,  '<mock>([...])'],
-    ])('should simplify output %#', (arg, simplifiedOutput, expectedResult) => {
+      [{ a: 1 }, true, '<mock>({a: 1})'],
+      [{ a: 11 }, true,  '<mock>({...})'],
+      [{ a: 11 }, false,  '<mock>({a: 11})'],
+      [[1, 2], true, '<mock>([1, 2])'],
+      [[11, 2], true, '<mock>([...])'],
+      [[11, 2], false, '<mock>([11, 2])'],
+      [tmock('aa').f(), true, '<mock>(aa.f())'],
+      [tmock('aaa').f(), true, '<mock>(<...>)'],
+      [tmock('aaa').f(), false, '<mock>(aaa.f())'],
+    ])('should collapse when stringified length exceeds simplification threshold %#', (arg, simplifiedOutput, expectedResult) => {
       // ARRANGE
-      tlocalopt({ simplifiedOutput: simplifiedOutput });
-      const mock = tmock({ simplifiedOutput: false });
+      tlocalopt({
+        simplifiedOutput: simplifiedOutput,
+        simplificationThreshold: 6,
+      });
+      const mock = tmock();
 
       // ACT
       const res = mock(arg);
 
       // ASSERT
       expect(tunmock(res)).toEqual(expectedResult);
-    });
-
-    test('should collapse mocks when stringified mock length exceeds simplification threshold 0', () => {
-      // ARRANGE
-      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 0, defaultMockName: 'mock' });
-      const mock = tmock();
-      const mock0 = tmock('');
-      const mock1 = tmock('m');
-
-      // ACT + ASSERT
-      expect(tunmock(mock(mock0))).toBe('mock()');
-      expect(tunmock(mock(mock1))).toBe('mock(<...>)');
-    });
-
-    test('should mocks when stringified mock length exceeds positive simplification threshold', () => {
-      // ARRANGE
-      tglobalopt({ simplifiedOutput: true, simplificationThreshold: 10, defaultMockName: 'mock' });
-      const mock = tmock();
-
-      // ACT + ASSERT
-      expect(tunmock(mock(mock.fff()))).toBe('mock(mock.fff())');
-      expect(tunmock(mock(mock.ffff()))).toBe('mock(<...>)');
     });
   });
 

@@ -39,30 +39,30 @@ function functionToString(data: any): string {
 //    return String(data);
 }
 
-function mockProxyToString(data: any, simplify: boolean) {
-  const pathBuilder = data[PATHBUILDER] as PathBuilder;
-  let result = pathBuilder.pathToBeShown;
-  if (simplify) {
-    const options = pathBuilder.options;
-    if (options.simplificationThreshold !== undefined && result.length > options.simplificationThreshold) {
-      result = '<...>';
-    }
+function collapseIfNeeded(data: string, collapsedData: string, options?: TFullOpt) {
+  if (!options) {
+    return data;
   }
-  return result || '';
+  if (options.simplifiedOutput && data.length > options.simplificationThreshold) {
+    return collapsedData;
+  }
+  return data;
 }
 
-// FIXME: simplificationThreshold is not considered!
-function toString(data: any, simplify: boolean = false) {
+function toString(data: any, options?: TFullOpt) {
   if (isArray(data)) {
-    return simplify ? '[...]' : '[' + data.map((item) => toString(item)).join(', ') + ']';
+    const dataStr = '[' + data.map((item) => toString(item, options)).join(', ') + ']';
+    return collapseIfNeeded(dataStr, '[...]', options);
   }
   if (isObject(data)) {
     const props = Object.keys(data);
-    return simplify ? '{...}' : '{' + props.map((key) => key + ': ' + toString(data[key])).join(', ') + '}';
+    const dataStr = '{' + props.map((key) => key + ': ' + toString(data[key])).join(', ') + '}';
+    return collapseIfNeeded(dataStr, '{...}', options);
   }
   if (isFunction(data)) {
     if (isMockProxy(data)) {
-      return mockProxyToString(data, simplify);
+      const pathBuilder = data[PATHBUILDER] as PathBuilder;
+      return collapseIfNeeded(pathBuilder.pathToBeShown, '<...>', options);
     }
     return functionToString(data);
   }
@@ -129,8 +129,8 @@ function hasSymbol(obj, sym: symbol) {
   return Object.getOwnPropertySymbols(obj).includes(sym);
 }
 
-function argsToString(args: any[], simplify: boolean = false) {
-  return '(' + args.map((arg) => toString(arg, simplify)).join(', ') + ')';
+function argsToString(args: any[], options?: TFullOpt) {
+  return '(' + args.map((arg) => toString(arg, options)).join(', ') + ')';
 }
 
 type PropMapperType = (val, prop?) => Object;
@@ -335,9 +335,9 @@ class PathBuilder {
   private path_: string  = '';
   private latestPathChunk_: ObjectPropertyType  = '';
   private pathToBeShown_ = '';
-  private options_: Partial<TFullOpt>;
+  private options_?: TFullOpt;
 
-  constructor(groupId: string, pathToBeShown: string, options: Partial<TFullOpt> = {}) {
+  constructor(groupId: string, pathToBeShown: string, options?: TFullOpt) {
     this.groupId_ = groupId;
     this.path_ = '';
     this.pathToBeShown_ = pathToBeShown;
@@ -347,7 +347,7 @@ class PathBuilder {
   public withCall(args: any[]): PathBuilder {
     const latestPathChunk = argsToString(args);
 
-    const pathToBeShownChunk = !this.options_.simplifiedOutput ? latestPathChunk : argsToString(args, true); // TODO: pass options to argsToString, make separate simplified* options for objects, arrays, mocks
+    const pathToBeShownChunk = !this.options_?.simplifiedOutput ? latestPathChunk : argsToString(args, this.options_);
     const newPathBuilder = new PathBuilder(
       this.groupId_,
       this.pathToBeShown_ + pathToBeShownChunk,
@@ -389,10 +389,6 @@ class PathBuilder {
 
   get parentPathBuilder() {
     return this.parentPathBuilder_;
-  }
-
-  get options() {
-    return this.options_;
   }
 }
 

@@ -424,32 +424,27 @@ test('nested mocks demo', () => {
 });
 ```
 ### Collapsing long arguments
-By default module machinery shorten string representation of mock touches - it collapses the contents of objects, arrays and long mocks in functions arguments. If you need to see the contents of collapsed data, you can use the `simplifiedOutput` option.
+By default module machinery shorten string representation of mock touches - it collapses the contents of objects, arrays and long mocks in functions arguments. If you need to see the contents of collapsed data, you can use the `simplifiedOutput` option. Use `simplificationThreshold` option to set the string length threshold after which the data will be collapsed.
 ```javascript
 test('simplified output enabled/disabled demo', () => {
   // ARRANGE
-  const mockSimplified = tmock({simplifiedOutput: true });
-  const mock = tmock({ simplifiedOutput: false });
+  tlocalopt({
+    simplifiedOutput: true,
+    simplificationThreshold: 6,
+  });
 
   // ACT
-  const simplifiedResult = mockSimplified.f(
-    1,
-    tmock().f('long enough string to make mock shorten in output'),
-    { a: 1 },
-    [1, 2, 3]
-  );
-  const result = mock.f(
-    1,
-    tmock().f('long enough string to make mock shorten it in output'),
-    { a: 1 },
-    [1, 2, 3],
+  const result = tmock().f(
+    tmock('a').f(1), // length of 'a.f(1)' is 6
+    { a: 1 }, // length of '{a: 1}' is 6
+    [1, 2], // length of '[1, 2]' is 6
+    tmock('aa').f(1), // length of 'aa.f(1)' > 6
+    { a: 11 }, // length of '{a: 11}' > 6
+    [1, 2, 3], // length of '[1, 2, 3]' > 6
   );
 
   // ASSERT
-  expect(tunmock(simplifiedResult)).toBe(
-    'mock.f(1, <...>, {...}, [...])');
-  expect(tunmock(result)).toBe(
-    `mock.f(1, mock.f('long enough string to make mock shorten in output'), {a: 1}, [1, 2, 3])`);
+  expect(tunmock(result)).toBe('<mock>.f(a.f(1), {a: 1}, [1, 2], <...>, {...}, [...])');
 });
 ```
 ### Module options
