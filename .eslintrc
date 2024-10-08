@@ -1,11 +1,12 @@
 {
     "root": true,
     "env": {
+        "es6": true,
         "commonjs": true,
         "jest": true
     },
     "parser": "@typescript-eslint/parser",
-    "plugins": ["@typescript-eslint"],
+    "plugins": ["@typescript-eslint", "@stylistic"],
     "rules": {
         "no-const-assign": "warn",
         "no-this-before-super": "warn",
@@ -19,14 +20,12 @@
         "constructor-super": "warn",
         "valid-typeof": "warn",
 
-        "indent": "off", // note you must disable the base rule as it can report incorrect errors. See https://github.com/typescript-eslint/typescript-eslint/blob/master/packages/eslint-plugin/docs/rules/indent.md
-        "@typescript-eslint/indent": ["error", 2, { "SwitchCase": 1, "ignoreComments": true, "ignoredNodes": ["TemplateLiteral *"] }],
+        "@stylistic/indent": ["error", 2],
 
         "quotes": ["error", "single", { "avoidEscape" : true, "allowTemplateLiterals": true }],
         "keyword-spacing": ["error", { "after": true }],
         "block-spacing": "error",
         "prefer-const": "error",
         "comma-dangle": [ "error", "always-multiline" ],
-        "@typescript-eslint/member-delimiter-style": ["error"]
     }
 }

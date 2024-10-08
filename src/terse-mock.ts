@@ -22,7 +22,7 @@ function getOrAddObjPropVal(obj: any, prop: ObjectPropertyType, val: any = {}) {
 
 function functionToString(data: any): string {
 //    if (simplify) { // Stringified functions are always simplified now
-  const found = String(data).match(/(\S*)\s*\(/);
+  const found = /(\S*)\s*\(/.exec(String(data));
   if (!found || found[1] === 'function') {
     return '<function>';
   }
@@ -206,7 +206,7 @@ export interface IExternalMock {
   create: () => any;
 }
 
-function createMockFunction(thisArg: any, defaultReturnSetter: (context: MockFunctionContext) => any = () => undefined) {
+function createMockFunction(_thisArg: any, defaultReturnSetter: (context: MockFunctionContext) => any = () => undefined) {
   const context: MockFunctionContext = {
     argsToReturnValues: {},
   };
@@ -266,9 +266,9 @@ export type MockInfo = {
 // TODO: implement mock times.
 
 class CallInfo {
-  private this_: any;
-  private args_: any[];
-  private pathBuilder_: PathBuilder;
+  private readonly this_: any;
+  private readonly args_: any[];
+  private readonly pathBuilder_: PathBuilder;
 
   constructor(thisArg: any, args: any[], pathBuilder: PathBuilder) {
     this.this_ = thisArg;
@@ -325,15 +325,14 @@ class Undefinable {
 
 class PathBuilder {
   private parentPathBuilder_: PathBuilder;
-  private groupId_: string  = '';
+  private readonly groupId_: string  = '';
   private path_: string  = '';
   private latestPathChunk_: ObjectPropertyType  = '';
-  private pathToBeShown_ = '';
-  private options_?: TOpt;
+  private readonly pathToBeShown_: string = '';
+  private readonly options_?: TOpt;
 
   constructor(groupId: string, pathToBeShown: string, options?: TOpt) {
     this.groupId_ = groupId;
-    this.path_ = '';
     this.pathToBeShown_ = pathToBeShown;
     this.options_ = options;
   }
@@ -359,7 +358,7 @@ class PathBuilder {
       this.groupId_,
       this.pathToBeShown_ ? this.pathToBeShown_ + latestPathChunkWithSeparators : latestPathChunkStringified,
       this.options_);
-    newPathBuilder.path_ = this.path_ + latestPathChunkWithSeparators,
+    newPathBuilder.path_ = this.path_ + latestPathChunkWithSeparators;
     newPathBuilder.latestPathChunk_ = prop;
     newPathBuilder.parentPathBuilder_ = this;
     return newPathBuilder;
@@ -383,6 +382,10 @@ class PathBuilder {
 
   get parentPathBuilder() {
     return this.parentPathBuilder_;
+  }
+
+  get options() {
+    return this.options_;
   }
 }
 
@@ -490,7 +493,7 @@ class MockTree {
     for (const prop in userTree.tree) {
       const userNode = userTree.tree[prop];
       const sutNode = sutTree.tree[prop];
-      result.tree[prop] = sutNode ? MockTreeNode.fromUserNodeAndSutNode(userNode as MockTreeNode, sutNode as MockTreeNode) : userNode;
+      result.tree[prop] = sutNode ? MockTreeNode.fromUserNodeAndSutNode(userNode, sutNode) : userNode;
     }
     for (const prop in sutTree.tree) {
       if (!result.tree[prop]) {
@@ -603,39 +606,41 @@ const userMockTrees: { [index: string]: MockTree } = {};
 const sutMockTrees: { [index: string]: MockTree } = {};
 
 // This function removes all tm proxies from data.
-export function tunmock(_data) {
+export function tunmock(data: any): any {
   const visitedObjects: any[] = [];
-  return tunmockInternal(_data);
+  return tunmockInternal(data);
 
-  function tunmockInternal(data) {
-    if (!isInstanceofObject(data)) {
-      return data;
+  function tunmockInternal(dataInternal) {
+    if (!isInstanceofObject(dataInternal)) {
+      return dataInternal;
     }
-    if (isObjectOrClass(data)) {
-      if (visitedObjects.includes(data)) {
-        return data;
+    if (isObjectOrClass(dataInternal)) {
+      if (visitedObjects.includes(dataInternal)) {
+        return dataInternal;
       }
-      visitedObjects.push(data);
+      visitedObjects.push(dataInternal);
     }
-    if (isMockProxy(data)) {
-      return tunmockInternal(data[MOCK_PROXY_TO_OBJECT]);
+    if (isMockProxy(dataInternal)) {
+      return tunmockInternal(dataInternal[MOCK_PROXY_TO_OBJECT]);
     }
-    if (isArray(data)) {
-      return data.map((item) => tunmockInternal(item))
+    if (isArray(dataInternal)) {
+      return dataInternal.map((item) => tunmockInternal(item))
     }
-    if (isSpy(data)) {
-      const originalFunction = data[ORIGINAL_FUNCTION];
-      shallowMergeFromTo(data, originalFunction, (val) => val, [IS_A_SPY, ORIGINAL_FUNCTION]);
+    if (isSpy(dataInternal)) {
+      const originalFunction = dataInternal[ORIGINAL_FUNCTION];
+      shallowMergeFromTo(dataInternal, originalFunction, (val) => val, [IS_A_SPY, ORIGINAL_FUNCTION]);
       return originalFunction;
     }
-    const result = isFunction(data) ? data : {};
-    shallowMergeFromTo(data, result, (val) => tunmockInternal(val));
+    const result = isFunction(dataInternal) ? dataInternal : {};
+    shallowMergeFromTo(dataInternal, result, (val) => tunmockInternal(val));
     return result;
   }
 }
 
-// TODO: make tinfo accept two arguments like (mock, m => m.p.f5) so you dont't have to pass single (mock.p.f5) and mutate mock.
-export function tinfo(mockOrSpy?: any): MockInfo {
+export function tinfo(mockOrSpy?: any, pathInsideMock?: (mockProxy: any) => any): MockInfo {
+  if (pathInsideMock && !isMockProxy(mockOrSpy)) {
+    throw new Error('tinfo: pathInsideMock is allowed only for mocks');
+  }
   if (!mockOrSpy) {
     return {
       externalMock: undefined,
@@ -643,18 +648,76 @@ export function tinfo(mockOrSpy?: any): MockInfo {
       callLog: totalCallLog.map((call) => call.pathBuilder.pathToBeShown),
     }
   }
-  if (!isMockProxy(mockOrSpy) && !isSpy(mockOrSpy)) {
+  let pathBuilder: PathBuilder = mockOrSpy[PATHBUILDER];
+  let externalMock;
+  if (isMockProxy(mockOrSpy)) {
+    if (pathInsideMock) {
+      const proxyContext: TinfoProxyContext = {
+        pathBuilder: pathBuilder,
+      };
+
+      const proxy = getTinfoProxy(proxyContext);
+      pathInsideMock(proxy);
+      pathBuilder = proxyContext.pathBuilder;
+    }
+    externalMock = getExternalMockWithCallsApplied(pathBuilder);
+  } else if (isSpy(mockOrSpy)) {
+    externalMock = mockOrSpy[EXTERNAL_MOCK];
+  } else {
     throw new Error('tinfo: argument should be either mock or spy');
   }
-  const pathBuilder = mockOrSpy[PATHBUILDER];
+
   return {
-    externalMock: mockOrSpy[EXTERNAL_MOCK],
+    externalMock: externalMock,
     calls: fillterByPath().map((call) => tunmock(call.args)),
     callLog: fillterByPath().map((call) => call.pathBuilder.pathToBeShown),
   };
 
+  // helper functions
+  type TinfoProxyContext = {
+    pathBuilder: PathBuilder;
+  }
+
+  function getTinfoProxy(proxyContext: TinfoProxyContext) {
+    const proxy = new Proxy(defaultProxyTarget, {
+      get(_target, prop) {
+        proxyContext.pathBuilder = proxyContext.pathBuilder.withProp(prop);
+        return proxy;
+      },
+      apply(_target, _thisArg, args) {
+        proxyContext.pathBuilder = proxyContext.pathBuilder.withCall(args);
+        return proxy;
+      },
+    });
+
+    return proxy;
+  }
+
   function fillterByPath() {
     return totalCallLog.filter((call) => call.pathBuilder.groupId === pathBuilder.groupId && call.pathBuilder.path.startsWith(pathBuilder.path));
+  }
+
+  function getExternalMockWithCallsApplied(pathBuilder: PathBuilder): any {
+    const options: TOpt = pathBuilder.options!;
+    if (!options.externalMock) {
+      return undefined;
+    }
+    const userMockTree = userMockTrees[pathBuilder.groupId];
+    const sutMockTree = sutMockTrees[pathBuilder.groupId];
+    const combinedTree = MockTree.fromUserTreeAndSutTree(userMockTree, sutMockTree);
+    const node = combinedTree.getNode(pathBuilder.path);
+    if (!node) {
+      return undefined;
+    }
+    if (node.hasValue()) {
+      const nodeValue = node.getValue();
+      if (isSpy(nodeValue)) {
+        return nodeValue[EXTERNAL_MOCK];
+      }
+    }
+    const externalMock = options.externalMock.create();
+    node.applyCallsToFuntion(externalMock);
+    return externalMock;
   }
 }
 
@@ -698,6 +761,7 @@ function applyCouplesToStub(stub, initCouples: TInitCouple[]) {
   return returnValue;
 }
 
+// TODO: accept initialization objects
 export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProxy: T) => any, any] | ([(mockProxy: T) => any, any])[]) {
   const initCouples = (isInitCouple(initCoupleOrCouples) ? [initCoupleOrCouples] : initCoupleOrCouples) as TInitCouple[];
   if (isMockProxy(stubWrapperOrMock)) {
@@ -744,7 +808,7 @@ export type TInit<T = void> = TInitObject<T> | TInitCouple<T> | (TInitObject<T> 
 
 function getStubInitializationProxy(proxyContext: StubInitializationProxyContext) {
   const initializationProxy = new Proxy(defaultProxyTarget, {
-    get(target, prop) {
+    get(_target, prop) {
       proxyContext.pathBuilder = proxyContext.pathBuilder.withProp(prop);
       let stubRef = proxyContext.stubRef;
       if (isScalar(stubRef)) { // isScalar(stubRef) is deprecated ?
@@ -758,7 +822,7 @@ function getStubInitializationProxy(proxyContext: StubInitializationProxyContext
       proxyContext.stubRef = stubRef[prop];
       return initializationProxy;
     },
-    apply(target, thisArg, args) {
+    apply(_target, thisArg, args) {
       proxyContext.pathBuilder = proxyContext.pathBuilder.withCall(args);
       const key = proxyContext.pathBuilder.latestPathChunk;
       let stubRef = proxyContext.stubRef;
@@ -795,12 +859,12 @@ type MockInitializationProxyContext = {
 
 function getMockInitializationProxy(proxyContext: MockInitializationProxyContext) {
   const proxy = new Proxy(defaultProxyTarget, {
-    get(target, prop) {
+    get(_target, prop) {
       proxyContext.pathBuilder = proxyContext.pathBuilder.withProp(prop);
       proxyContext.tree.addChildIfNotExistOrReplaceTemp(new MockTreeNode(proxyContext.pathBuilder), proxyContext.pathBuilder);
       return pickProxy();
     },
-    apply(target, thisArg, args) {
+    apply(_target, thisArg, args) {
       proxyContext.pathBuilder = proxyContext.pathBuilder.withCall(args);
       proxyContext.tree.addChildIfNotExistOrReplaceTemp(new MockTreeNode(proxyContext.pathBuilder), proxyContext.pathBuilder,
         new CallInfo(thisArg, args, proxyContext.pathBuilder));
@@ -861,7 +925,7 @@ function applyCouplesToMock(initCouples: TInitCouple[], pathBuilder: PathBuilder
   });
 }
 
-function getFinalNode(tree: MockTree, pathBuilder: PathBuilder, callInfo?: CallInfo) {
+function getFinalNode(tree: MockTree, pathBuilder: PathBuilder, callInfo?: CallInfo): MockTreeNode | undefined {
   const node = tree.getNode(pathBuilder.path);
   if (node?.isFinal()) {
     return node;
@@ -875,6 +939,7 @@ function getFinalNode(tree: MockTree, pathBuilder: PathBuilder, callInfo?: CallI
   }
 }
 
+// TODO: use options from path builder?
 function traversePropOrCall(pathBuilder: PathBuilder, options: TOpt, callInfo?: CallInfo) {
   if (callInfo) {
     totalCallLog.push(callInfo);
@@ -907,7 +972,7 @@ function getSutProxy(pathBuilder: PathBuilder, options: TOpt) {
   const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
   const path = pathBuilder.path;
   const sutProxy = new Proxy(defaultProxyTarget, {
-    get(target, prop) {
+    get(_target, prop) {
       // Handle special properties.
       switch (prop) {
         case IS_A_MOCK_PROXY: return true;
@@ -918,27 +983,19 @@ function getSutProxy(pathBuilder: PathBuilder, options: TOpt) {
             .toObject(pathBuilder.path, options)
             .getValue();
         case 'hasOwnProperty': return () => true;
-        case EXTERNAL_MOCK:
-          if (!options.externalMock) {
-            return undefined;
-          }
-          const node = sutMockTree.getNode(path)!;
-          const externalMock = options.externalMock.create();
-          node.applyCallsToFuntion(externalMock);
-          return externalMock;
         case Symbol.toPrimitive: return () => pathBuilder.pathToBeShown; // Prevent from 'TypeError: Cannot convert object to primitive value'.
       }
 
       return traversePropOrCall(pathBuilder.withProp(prop), options);
     },
 
-    set(target, prop, value) {
+    set(_target, prop, value) {
       const newPathBuilder = pathBuilder.withProp(prop);
       sutMockTree.addChild(new TreeNodeFinal(newPathBuilder, value), newPathBuilder);
       return true;
     },
 
-    apply(target, thisArg, args) {
+    apply(_target, thisArg, args) {
       if (args.length > 0) {
         const firstArg = args[0];
         // Handle special arguments.
@@ -982,8 +1039,8 @@ function initializersToArrayOfCouples<T>(initializerArg:  InitializerArgType<T>)
     initializers = initializerArg as (TInitObject | TInitCouple)[];
   }
 
-  const initCouples: TInitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as TInitCouple[] ?? [];
-  const initObjects = initializers.filter(initializer => isObject(initializer)) as TInitObject[] ?? [];
+  const initCouples: TInitCouple[] = initializers.filter(initializer => isInitCouple(initializer)) as TInitCouple[];
+  const initObjects = initializers.filter(initializer => isObject(initializer)) as TInitObject[];
   for (const initObject of initObjects) {
     // Make init couples from init object.
     for (const [prop, val] of Object.entries(initObject)) {
@@ -999,9 +1056,9 @@ function parseTmockArgs<T>(nameOrInitializersArg?: NameOrInitializerArgType<T>, 
   let initializers: TInitCouple[] | undefined;
   if (nameOrInitializersArg !== undefined) {
     if (isString(nameOrInitializersArg)) {
-      name = nameOrInitializersArg as string;
+      name = nameOrInitializersArg;
     } else {
-      initializers = initializersToArrayOfCouples<T>(nameOrInitializersArg as InitializerArgType<T>);
+      initializers = initializersToArrayOfCouples<T>(nameOrInitializersArg);
     }
   }
   if (initializersArg) {
