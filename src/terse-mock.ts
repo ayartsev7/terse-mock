@@ -669,8 +669,8 @@ export function tinfo(mockOrSpy?: any, pathInsideMock?: (mockProxy: any) => any)
 
   return {
     externalMock: externalMock,
-    calls: fillterByPath().map((call) => tunmock(call.args)),
-    callLog: fillterByPath().map((call) => call.pathBuilder.pathToBeShown),
+    calls: fillterByPath(pathBuilder).map((call) => tunmock(call.args)),
+    callLog: fillterByPath(pathBuilder).map((call) => call.pathBuilder.pathToBeShown),
   };
 
   // helper functions
@@ -693,19 +693,25 @@ export function tinfo(mockOrSpy?: any, pathInsideMock?: (mockProxy: any) => any)
     return proxy;
   }
 
-  function fillterByPath() {
-    return totalCallLog.filter((call) => call.pathBuilder.groupId === pathBuilder.groupId && call.pathBuilder.path.startsWith(pathBuilder.path));
+  function fillterByPath(pathBuilderInternal: PathBuilder) {
+    const calls = totalCallLog.filter((call) => call.pathBuilder.groupId === pathBuilderInternal.groupId
+      && call.pathBuilder.parentPathBuilder.path === pathBuilderInternal.path);
+    if (calls.length > 0) {
+      return calls;
+    }
+    // Return everything that starts with path
+    return totalCallLog.filter((call) => call.pathBuilder.groupId === pathBuilderInternal.groupId && call.pathBuilder.path.startsWith(pathBuilderInternal.path));
   }
 
-  function getExternalMockWithCallsApplied(pathBuilder: PathBuilder): any {
-    const options: TOpt = pathBuilder.options!;
+  function getExternalMockWithCallsApplied(pathBuilderInternal: PathBuilder): any {
+    const options: TOpt = pathBuilderInternal.options!;
     if (!options.externalMock) {
       return undefined;
     }
-    const userMockTree = userMockTrees[pathBuilder.groupId];
-    const sutMockTree = sutMockTrees[pathBuilder.groupId];
+    const userMockTree = userMockTrees[pathBuilderInternal.groupId];
+    const sutMockTree = sutMockTrees[pathBuilderInternal.groupId];
     const combinedTree = MockTree.fromUserTreeAndSutTree(userMockTree, sutMockTree);
-    const node = combinedTree.getNode(pathBuilder.path);
+    const node = combinedTree.getNode(pathBuilderInternal.path);
     if (!node) {
       return undefined;
     }

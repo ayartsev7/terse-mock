@@ -1781,6 +1781,8 @@ describe('------------------- treset --------------------', () => {
     // ACT
     const mock3 = mock1.prop.f(Infinity);
     mock1.f();
+    mock2();
+    mock2();
     mock2.f();
     mock1.prop.f();
     mock2(function () {}, [1], {'0': 1});
@@ -1790,6 +1792,8 @@ describe('------------------- treset --------------------', () => {
     expect(tinfo().callLog).toEqual([
       'mock1.prop.f(Infinity)',
       'mock1.f()',
+      'mock2()',
+      'mock2()',
       'mock2.f()',
       'mock1.prop.f()',
       'mock2(<function>, [1], {0: 1})',
@@ -1804,7 +1808,8 @@ describe('------------------- treset --------------------', () => {
       'mock1.prop.f(Infinity).prop.f2([])',
     ]);
     expect(tinfo(mock2).callLog).toEqual([
-      'mock2.f()',
+      'mock2()',
+      'mock2()',
       'mock2(<function>, [1], {0: 1})',
     ]);
 
@@ -1812,6 +1817,8 @@ describe('------------------- treset --------------------', () => {
     treset(mock3);
     expect(tinfo().callLog).toEqual([
       'mock1.f()',
+      'mock2()',
+      'mock2()',
       'mock2.f()',
       'mock1.prop.f()',
       'mock2(<function>, [1], {0: 1})',
@@ -1821,7 +1828,8 @@ describe('------------------- treset --------------------', () => {
       'mock1.prop.f()',
     ]);
     expect(tinfo(mock2).callLog).toEqual([
-      'mock2.f()',
+      'mock2()',
+      'mock2()',
       'mock2(<function>, [1], {0: 1})',
     ]);
 
@@ -1922,16 +1930,17 @@ describe('----------------- tinfo ------------------', () => {
       // ARRANGE
       const mock1 = tmock('mock1', [{ f: function () {} }]);
       const mock2 = tmock('mock2', [{ f: function fff() {} }]);
+      const mock3 = tmock();
 
       // ACT
       mock1.f();
       mock1.f(mock1.a.b.c);
       mock2.f();
       mock1.g();
-      mock2();
       mock2.f1('1');
       mock2.f1(1).f2(2);
       mock2.f1(1).f2(2).f3(null, Symbol());
+      mock3();
 
       // ASSERT
       expect(tinfo().callLog).toEqual([
@@ -1939,13 +1948,13 @@ describe('----------------- tinfo ------------------', () => {
         'mock1.f(mock1.a.b.c)',
         'mock2.f()',
         'mock1.g()',
-        'mock2()',
         `mock2.f1('1')`,
         'mock2.f1(1)',
         'mock2.f1(1).f2(2)',
         'mock2.f1(1)',
         'mock2.f1(1).f2(2)',
         'mock2.f1(1).f2(2).f3(null, Symbol())',
+        '<mock>()',
       ]);
       expect(tinfo(mock1).callLog).toEqual([
         'mock1.f()',
@@ -1954,13 +1963,15 @@ describe('----------------- tinfo ------------------', () => {
       ]);
       expect(tinfo(mock2).callLog).toEqual([
         'mock2.f()',
-        'mock2()',
         `mock2.f1('1')`,
         'mock2.f1(1)',
         'mock2.f1(1).f2(2)',
         'mock2.f1(1)',
         'mock2.f1(1).f2(2)',
         'mock2.f1(1).f2(2).f3(null, Symbol())',
+      ]);
+      expect(tinfo(mock3).callLog).toEqual([
+        '<mock>()',
       ]);
     });
 
@@ -1986,6 +1997,7 @@ describe('----------------- tinfo ------------------', () => {
         arg1.a.f;
         arg1();
         arg1.a.f();
+        arg1.a.g();
         arg1.fff();
         arg1.fff(1);
         arg1.fff().prop.g();
@@ -1995,13 +2007,14 @@ describe('----------------- tinfo ------------------', () => {
       sut(mock1);
 
       // ACT + ASSERT
-      expect(tinfo(mock1).callLog).toEqual(['m()', 'm.a.f()', 'm.fff()', 'm.fff(1)', 'm.fff()', 'm.fff().prop.g()', 'm.fff(7)', 'm.fff(m.fff(7))']);
-      expect(tinfo(mock1.a).callLog).toEqual(['m.a.f()']);
+      expect(tinfo(mock1).callLog).toEqual(['m()']);
+      expect(tinfo(mock1.a).callLog).toEqual(['m.a.f()', 'm.a.g()']);
       expect(tinfo(mock1.a.f).callLog).toEqual(['m.a.f()']);
-      expect(tinfo(mock1.fff).callLog).toEqual(['m.fff()', 'm.fff(1)', 'm.fff()', 'm.fff().prop.g()', 'm.fff(7)', 'm.fff(m.fff(7))']);
-      expect(tinfo(mock1, m => m.a).callLog).toEqual(['m.a.f()']);
+      expect(tinfo(mock1.fff).callLog).toEqual(['m.fff()', 'm.fff(1)', 'm.fff()', 'm.fff(7)', 'm.fff(m.fff(7))']);
+      expect(tinfo(mock1, m => m.a).callLog).toEqual(['m.a.f()', 'm.a.g()']);
       expect(tinfo(mock1, m => m.a.f).callLog).toEqual(['m.a.f()']);
-      expect(tinfo(mock1, m => m.fff).callLog).toEqual(['m.fff()', 'm.fff(1)', 'm.fff()', 'm.fff().prop.g()' /* TODO: should this be here? */, 'm.fff(7)', 'm.fff(m.fff(7))']);
+      expect(tinfo(mock1, m => m.fff).callLog).toEqual(['m.fff()', 'm.fff(1)', 'm.fff()', 'm.fff(7)', 'm.fff(m.fff(7))']);
+      expect(tinfo(mock1, m => m.fff().prop.g).callLog).toEqual(['m.fff().prop.g()']);
     });
 
     test('should return call log when argument is a spy or path inside mock leads to spy', () => {
@@ -2034,7 +2047,7 @@ describe('----------------- tinfo ------------------', () => {
   });
 
   describe('calls', () => {
-    test('should return calls when argument is a mock', () => {
+    test('should return calls of particular function when mock or path to mock points to function that was called at least once', () => {
       // ARRANGE
       const mock = tmock([
         [m => m.f(), 'some value'],
@@ -2048,26 +2061,46 @@ describe('----------------- tinfo ------------------', () => {
       // ACT + ASSERT
       expect(tinfo(mock).calls).toEqual([
         [1], // mock(1)
-        [], // f()
-        [1, 2, 3], // f(1, 2, 3)
-        [1, 2, 3], // f(1, 2, 3)
         [], // mock()
-        ['<mock>()', true, false], // g(mock(), true, false)
       ]);
       expect(tinfo(mock.f).calls).toEqual([
         [], // f()
         [1, 2, 3], // f(1, 2, 3)
         [1, 2, 3], // f(1, 2, 3)
-        ['<mock>()', true, false], // TODO: should this be here?
       ]);
       expect(tinfo(mock, m => m.f).calls).toEqual([
         [], // f()
         [1, 2, 3], // f(1, 2, 3)
         [1, 2, 3], // f(1, 2, 3)
-        ['<mock>()', true, false], // TODO: should this be here?
       ]);
       expect(tinfo(mock, m => m.f(1 ,2, 3).b.g).calls).toEqual([
         ['<mock>()', true, false], // g(mock(), true, false)
+      ]);
+    });
+
+    test('should return all raletively deeper calls when mock or path to mock points to property (call was never applied to this mock or path directly)', () => {
+      // ARRANGE
+      const mock = tmock();
+
+      mock.a.f(1);
+      mock.a.f(1)(111);
+      mock.a.f().g(-1);
+      mock.f('');
+
+      // ACT + ASSERT
+      expect(tinfo(mock.a).calls).toEqual([
+        [1], // f(1)
+        [1], // f(1)
+        [111], // f(1)(111)
+        [], // f()
+        [-1], // g()
+      ]);
+      expect(tinfo(mock, m => m.a).calls).toEqual([
+        [1], // f(1)
+        [1], // f(1)
+        [111], // f(1)(111)
+        [], // f()
+        [-1], // g()
       ]);
     });
 
