@@ -40,30 +40,20 @@ function functionToString(data: any): string {
 //    return String(data);
 }
 
-function collapseIfNeeded(data: string, collapsedData: string, options?: TOpt) {
-  if (!options) {
-    return data;
-  }
-  if (options.collapseLongValues && data.length > options.collapseThreshold) {
-    return collapsedData;
-  }
-  return data;
-}
-
 function toString(data: any, options?: TOpt) {
   if (isArray(data)) {
     const dataStr = '[' + data.map((item) => toString(item, options)).join(', ') + ']';
-    return collapseIfNeeded(dataStr, '[...]', options);
+    return collapseIfNeeded(dataStr, '[...]');
   }
   if (isObject(data)) {
     const props = Object.keys(data);
     const dataStr = '{' + props.map((key) => key + ': ' + toString(data[key])).join(', ') + '}';
-    return collapseIfNeeded(dataStr, '{...}', options);
+    return collapseIfNeeded(dataStr, '{...}');
   }
   if (isFunction(data)) {
     if (isMockProxy(data)) {
       const pathBuilder = data[PATHBUILDER] as PathBuilder;
-      return collapseIfNeeded(pathBuilder.pathToBeShown, '<...>', options);
+      return collapseIfNeeded(pathBuilder.pathToBeShown, '<...>');
     }
     return functionToString(data);
   }
@@ -71,6 +61,16 @@ function toString(data: any, options?: TOpt) {
     return globalOptions.quoteSymbol + data + globalOptions.quoteSymbol;
   }
   return String(data);
+
+  function collapseIfNeeded(dataStr: string, collapsedData: string) {
+    if (!options) {
+      return dataStr;
+    }
+    if (options.collapseLongValues && dataStr.length > options.collapseThreshold) {
+      return collapsedData;
+    }
+    return dataStr;
+  }
 }
 
 function isString(data) {
@@ -485,7 +485,6 @@ class TreeNodeFinal extends MockTreeNode {
 
 class MockTree {
   // TODO: describe.
-  // Each tree item represents a node.
   private tree: { [key: string]: MockTreeNode } = {};
 
   static fromUserTreeAndSutTree(userTree: MockTree, sutTree: MockTree): MockTree {
@@ -574,27 +573,33 @@ class MockTree {
   }
 
   // Convert tree to hierarchy of objects and functions based on node paths and node values.
-  toObject(path: string, options: TOpt): Undefinable {
-    const node = this.tree[path];
-    if (node.hasValue()) {
-      let value = node.getValue();
-      if (node.isTemp()) {
-        value = options.autoValuesPrefix + (value || '<mock>');
+  toObject(pathBuilder: PathBuilder): Undefinable {
+    const options = pathBuilder.options!;
+    const tree = this.tree;
+    return toObjectInternal(pathBuilder.path);
+
+    function toObjectInternal(path: string): Undefinable {
+      const node = tree[path];
+      if (node.hasValue()) {
+        let value = node.getValue();
+        if (node.isTemp()) {
+          value = options.autoValuesPrefix + (value || '<mock>');
+        }
+        return new Undefinable(value);
       }
-      return new Undefinable(value);
+
+      const collectValuesFromChildren = (res: Object, propsOrArgsToChildPaths: StringDictionary) =>
+        shallowMergeFromTo(propsOrArgsToChildPaths, res, (val) => toObjectInternal(val).getValue());
+
+      let result = {};
+      if (node.hasCalls()) { // node represents something collable.
+        result = node.toMockFunction();
+        collectValuesFromChildren(result[ARGS_TO_RETURN_VALUES], node.getArgsToChildPaths());
+      }
+      collectValuesFromChildren(result, node.getPropsToChildPaths());
+
+      return new Undefinable(result);
     }
-
-    const collectValuesFromChildren = (res: Object, propsOrArgsToChildPaths: StringDictionary) =>
-      shallowMergeFromTo(propsOrArgsToChildPaths, res, (val) => this.toObject(val, options).getValue());
-
-    let result = {};
-    if (node.hasCalls()) { // node represents something collable.
-      result = node.toMockFunction();
-      collectValuesFromChildren(result[ARGS_TO_RETURN_VALUES], node.getArgsToChildPaths());
-    }
-    collectValuesFromChildren(result, node.getPropsToChildPaths());
-
-    return new Undefinable(result);
   }
 }
 
@@ -882,7 +887,7 @@ function getMockInitializationProxy(proxyContext: MockInitializationProxyContext
   }
 }
 
-function applyCouplesToMock(initCouples: TInitCouple[], pathBuilder: PathBuilder, options: TOpt) {
+function applyCouplesToMock(initCouples: TInitCouple[], pathBuilder: PathBuilder) {
   const userMockTree = userMockTrees[pathBuilder.groupId];
   initCouples.forEach(initCouple => {
     const proxyContext: MockInitializationProxyContext = {
@@ -900,7 +905,7 @@ function applyCouplesToMock(initCouples: TInitCouple[], pathBuilder: PathBuilder
       throw new Error('Mocking at root level is not allowed');
     }
 
-    const val = deepCloneAndSpyify(initCouple[1], proxyContext.pathBuilder, options.externalMock);
+    const val = deepCloneAndSpyify(initCouple[1], proxyContext.pathBuilder, pathBuilder.options!.externalMock);
     if (!stubProxyContext) {
       userMockTree.setNode(path, new TreeNodeFinal(proxyContext.pathBuilder, val));
     } else {
@@ -931,7 +936,7 @@ function getFinalNode(tree: MockTree, pathBuilder: PathBuilder, callInfo?: CallI
 }
 
 // TODO: use options from path builder?
-function traversePropOrCall(pathBuilder: PathBuilder, options: TOpt, callInfo?: CallInfo) {
+function traversePropOrCall(pathBuilder: PathBuilder, callInfo?: CallInfo) {
   if (callInfo) {
     totalCallLog.push(callInfo);
   }
@@ -948,17 +953,17 @@ function traversePropOrCall(pathBuilder: PathBuilder, options: TOpt, callInfo?: 
     return nodeSetByUser.getValue();
   }
 
-  if (!options.automock) {
+  if (!pathBuilder.options!.automock) {
     // Stop proxing if automock is false and propertry has not been explicitly mocked.
     return undefined;
   }
 
   sutMockTree.addChildIfNotExistOrReplaceTemp(new TreeNodeTemp(pathBuilder), pathBuilder, callInfo);
 
-  return getSutProxy(pathBuilder, options);
+  return getSutProxy(pathBuilder);
 }
 
-function getSutProxy(pathBuilder: PathBuilder, options: TOpt) {
+function getSutProxy(pathBuilder: PathBuilder) {
   const userMockTree: MockTree = userMockTrees[pathBuilder.groupId];
   const sutMockTree: MockTree = sutMockTrees[pathBuilder.groupId];
   const path = pathBuilder.path;
@@ -971,13 +976,13 @@ function getSutProxy(pathBuilder: PathBuilder, options: TOpt) {
         case MOCK_PROXY_TO_OBJECT:
           return MockTree
             .fromUserTreeAndSutTree(userMockTree, sutMockTree)
-            .toObject(pathBuilder.path, options)
+            .toObject(pathBuilder)
             .getValue();
         case 'hasOwnProperty': return () => true;
         case Symbol.toPrimitive: return () => pathBuilder.pathToBeShown; // Prevent from 'TypeError: Cannot convert object to primitive value'.
       }
 
-      return traversePropOrCall(pathBuilder.withProp(prop), options);
+      return traversePropOrCall(pathBuilder.withProp(prop));
     },
 
     set(_target, prop, value) {
@@ -992,7 +997,7 @@ function getSutProxy(pathBuilder: PathBuilder, options: TOpt) {
         // Handle special arguments.
         if (firstArg === SET_MOCK_PROXY_RETURN_VALUES) {
           const initCoulpes = args[1];
-          applyCouplesToMock(initCoulpes, pathBuilder, options);
+          applyCouplesToMock(initCoulpes, pathBuilder);
           return sutProxy;
         } else if (firstArg === RESET_MOCK_PROXY) {
           if (sutMockTree.getNode(path)) {
@@ -1013,7 +1018,7 @@ function getSutProxy(pathBuilder: PathBuilder, options: TOpt) {
       }
 
       const pathBuilderWithCall = pathBuilder.withCall(args);
-      return traversePropOrCall(pathBuilderWithCall, options, new CallInfo(thisArg, args, pathBuilderWithCall));
+      return traversePropOrCall(pathBuilderWithCall, new CallInfo(thisArg, args, pathBuilderWithCall));
     },
   });
 
@@ -1095,7 +1100,7 @@ export function tmock<T = void>(
   userMockTrees[mockId] = userMockTree;
   sutMockTrees[mockId] = sutMockTree;
 
-  const sutMockProxy = getSutProxy(pathBuilder, options);
+  const sutMockProxy = getSutProxy(pathBuilder);
 
   if (parsedArgs.initializers.length) {
     tset(sutMockProxy, parsedArgs.initializers);
