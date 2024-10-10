@@ -228,9 +228,9 @@ Generic form of `tmock`/`tstub` is available if one wants to use benefits like s
 
 ![Static type checking and code completion](../media/static-type-check.jpg?raw=true)
 ## Call history
-terse-mock keeps history of function calls. The test below demonstrates how one can check call order and arguments passed to functions:
+Module keeps history of function calls. The code below demonstrates how one can check call order and arguments passed to functions:
 ```javascript
-test('checking calls demo', () => {
+test('check calls demo', () => {
   // ARRANGE
   const mock = tmock([
     [m => m.f1(), 1],
@@ -238,18 +238,22 @@ test('checking calls demo', () => {
 
   // ACT
   mock.f1();
-  mock.prop.f2(mock.a.b.c, false);
-  mock.prop.f2({ b: 'bbb' });
+  mock.prop.f2(1, false);
+  mock.prop.f2({ b: 'b' }).g(1);
 
   // ASSERT
-  expect(tinfo().callLog).toEqual([ // log of all calls
-    'mock.f1()',
-    'mock.prop.f2(mock.a.b.c, false)',
-    'mock.prop.f2({...})',
+  // All calls log
+  expect(tinfo().callLog).toEqual([
+    '<mock>.f1()',
+    '<mock>.prop.f2(1, false)',
+    `<mock>.prop.f2({b: 'b'})`,
+    `<mock>.prop.f2({b: 'b'}).g(1)`,
   ]);
-  expect(tinfo(mock.prop.f2).calls[1][0]).toEqual({ // examine arguments of a particular call
-    b: 'bbb',
+  // Examine arguments of a particular call
+  expect(tinfo(mock.prop.f2).calls[1][0]).toEqual({
+    b: 'b',
   });
+  expect(tinfo(mock, m => m.prop.f2({ b: 'b' }).g).calls[0][0]).toBe(1);
 });
 ```
 This also can be useful for debugging purposes to examine all calls fo mocked functions in sut.
@@ -281,7 +285,7 @@ const jestMock: IExternalMock = {
   create: () => jest.fn(),
 };
 
-test('Use Jest function to analyze calls to mocked functions demo', () => {
+test('using Jest function to analyze calls to mocked functions demo', () => {
   // ARRANGE
   tlocalopt({ externalMock: jestMock });
   const mock = tmock();
@@ -291,13 +295,13 @@ test('Use Jest function to analyze calls to mocked functions demo', () => {
 
   // ASSERT
   const externalMockForF = tinfo(mock.f).externalMock;
-  expect(externalMockForF).toBeCalledTimes(1);
-  expect(externalMockForF).toBeCalledWith(7);
+  expect(externalMockForF).toHaveBeenCalledTimes(1);
+  expect(externalMockForF).toHaveBeenCalledWith(7);
 });
 ```
 3rd party mocks can also be used as return values for terse-mock mocks:
 ```javascript
-test('Using Jest function as mock value demo', () => {
+test('using Jest function as mock value demo', () => {
   // ARRANGE
   const jestFn = jest.fn();
   const mock = tmock({ f: jestFn });
@@ -306,7 +310,7 @@ test('Using Jest function as mock value demo', () => {
   mock.f();
 
   // ASSERT
-  expect(mock.f).toBeCalledTimes(1);
+  expect(mock.f).toHaveBeenCalledTimes(1);
 });
 ```
 ## Module mocks

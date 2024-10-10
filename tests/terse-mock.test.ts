@@ -2078,30 +2078,18 @@ describe('----------------- tinfo ------------------', () => {
       ]);
     });
 
-    test('should return all raletively deeper calls when mock or path to mock points to property (call was never applied to this mock or path directly)', () => {
+    test('should return empty calls when call was never applied to this mock or path directly', () => {
       // ARRANGE
       const mock = tmock();
 
+      mock();
       mock.a.f(1);
-      mock.a.f(1)(111);
       mock.a.f().g(-1);
       mock.f('');
 
       // ACT + ASSERT
-      expect(tinfo(mock.a).calls).toEqual([
-        [1], // f(1)
-        [1], // f(1)
-        [111], // f(1)(111)
-        [], // f()
-        [-1], // g()
-      ]);
-      expect(tinfo(mock, m => m.a).calls).toEqual([
-        [1], // f(1)
-        [1], // f(1)
-        [111], // f(1)(111)
-        [], // f()
-        [-1], // g()
-      ]);
+      expect(tinfo(mock.a).calls).toEqual([]);
+      expect(tinfo(mock, m => m.a).calls).toEqual([]);
     });
 
     test('should return calls when argument is a spy or path inside mock leads to spy', () => {
@@ -2227,4 +2215,30 @@ describe ('---------------- test with js -----------------', () => {
     // ASSERT
     expect(res).toBe('<mock>');
   });
+});
+
+test('checking calls demo', () => {
+  // ARRANGE
+  const mock = tmock([
+    [m => m.f1(), 1],
+  ]);
+
+  // ACT
+  mock.f1();
+  mock.prop.f2(1, false);
+  mock.prop.f2({ b: 'b' }).g(1);
+
+  // ASSERT
+  // All calls log
+  expect(tinfo().callLog).toEqual([
+    '<mock>.f1()',
+    '<mock>.prop.f2(1, false)',
+    `<mock>.prop.f2({b: 'b'})`,
+    `<mock>.prop.f2({b: 'b'}).g(1)`,
+  ]);
+  // Examine arguments of a particular call
+  expect(tinfo(mock.prop.f2).calls[1][0]).toEqual({
+    b: 'b',
+  });
+  expect(tinfo(mock, m => m.prop.f2({ b: 'b' }).g).calls[0][0]).toBe(1);
 });

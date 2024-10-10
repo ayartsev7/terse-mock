@@ -669,8 +669,8 @@ export function tinfo(mockOrSpy?: any, pathInsideMock?: (mockProxy: any) => any)
 
   return {
     externalMock: externalMock,
-    calls: fillterByPath(pathBuilder).map((call) => tunmock(call.args)),
-    callLog: fillterByPath(pathBuilder).map((call) => call.pathBuilder.pathToBeShown),
+    calls: fillterByDirectCallsOrPath(pathBuilder, true).map((call) => tunmock(call.args)),
+    callLog: fillterByDirectCallsOrPath(pathBuilder).map((call) => call.pathBuilder.pathToBeShown),
   };
 
   // helper functions
@@ -693,10 +693,10 @@ export function tinfo(mockOrSpy?: any, pathInsideMock?: (mockProxy: any) => any)
     return proxy;
   }
 
-  function fillterByPath(pathBuilderInternal: PathBuilder) {
+  function fillterByDirectCallsOrPath(pathBuilderInternal: PathBuilder, filterByDirectCallsOnly: boolean = false) {
     const calls = totalCallLog.filter((call) => call.pathBuilder.groupId === pathBuilderInternal.groupId
       && call.pathBuilder.parentPathBuilder.path === pathBuilderInternal.path);
-    if (calls.length > 0) {
+    if (calls.length > 0 || filterByDirectCallsOnly) {
       return calls;
     }
     // Return everything that starts with path
