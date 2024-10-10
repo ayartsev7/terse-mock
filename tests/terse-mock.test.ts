@@ -1242,18 +1242,38 @@ describe('-------------------- tset ---------------------', () => {
   });
 
   test.each([
-    (m) => m.a,
-    (m) => m.a.b.c,
-    (m) => m.b[3],
-    (m) => m(),
-    (m) => m()(),
-    (m) => m.f(),
-    (m) => m.a.f(),
-    (m) => m.f().a,
-    (m) => m.f().g(),
-    (m) => m.f()(),
-    (m) => m.f()().a,
-    (m) => m.f().a.g().h,
+    [[m => m.a, 1], { a: 1 }],
+    [{ a: 1 }, { a: 1 }],
+    [[[m => m.a, 1]], { a: 1 }],
+    [[{ a: 1 }], { a: 1 }],
+    [[[m => m.a, 1], { b: 3 }, [m => m.c, 5], { d: 7 }], { a: 1, b: 3, c: 5, d: 7 }],
+  ])('should accept tuple, object or array of tuples and objects as argument', (initializer: any, expectedResult: any) => {
+    // ARRANGE
+    const mock = tmock();
+    const stub = tstub({});
+
+    // ACT
+    tset(mock, initializer);
+    tset(stub, initializer);
+
+    // ACT + ASSERT
+    expect(tunmock(mock)).toEqual(expectedResult);
+    expect(stub).toEqual(expectedResult);
+  });
+
+  test.each([
+    m => m.a,
+    m => m.a.b.c,
+    m => m.b[3],
+    m => m(),
+    m => m()(),
+    m => m.f(),
+    m => m.a.f(),
+    m => m.f().a,
+    m => m.f().g(),
+    m => m.f()(),
+    m => m.f()().a,
+    m => m.f().a.g().h,
   ])('should set mock values %#', (initExpression) => {
     // ARRANGE
     const mock = tmock();

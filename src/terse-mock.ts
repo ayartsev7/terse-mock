@@ -767,21 +767,6 @@ function applyCouplesToStub(stub, initCouples: TInitCouple[]) {
   return returnValue;
 }
 
-// TODO: accept initialization objects
-export function tset<T = any>(stubWrapperOrMock, initCoupleOrCouples: [(mockProxy: T) => any, any] | ([(mockProxy: T) => any, any])[]) {
-  const initCouples = (isInitCouple(initCoupleOrCouples) ? [initCoupleOrCouples] : initCoupleOrCouples) as TInitCouple[];
-  if (isMockProxy(stubWrapperOrMock)) {
-    stubWrapperOrMock(SET_MOCK_PROXY_RETURN_VALUES, initCouples);
-  } else if (isStub(stubWrapperOrMock)) {
-    const newStub = applyCouplesToStub(stubWrapperOrMock, initCouples);
-    if (newStub != stubWrapperOrMock) {
-      throw new Error('tset: cannot replace stub root');
-    }
-  } else {
-    throw new Error('tset: first argument should be either mock or stub');
-  }
-}
-
 let globalOptions: TOpt = {
   automock: true,
   collapseLongValues: true, // Should this be done by default?
@@ -1128,6 +1113,20 @@ export function tstub<T = void>(initializer: InitializerArgType<T>): T extends v
   }
 
   return stub;
+}
+
+export function tset<T = any>(mockOrStub: any, initializer: InitializerArgType<T>) {
+  const initCouples: TInitCouple[] = initializersToArrayOfCouples<T>(initializer);
+  if (isMockProxy(mockOrStub)) {
+    mockOrStub(SET_MOCK_PROXY_RETURN_VALUES, initCouples);
+  } else if (isStub(mockOrStub)) {
+    const newStub = applyCouplesToStub(mockOrStub, initCouples);
+    if (newStub != mockOrStub) {
+      throw new Error('tset: cannot replace stub root');
+    }
+  } else {
+    throw new Error('tset: first argument should be either mock or stub');
+  }
 }
 
 export default {
